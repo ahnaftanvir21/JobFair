@@ -6,25 +6,59 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { hash } from 'bcryptjs';
-import { UserRole } from '../../common/enums/index.js';
+import { DataSource } from 'typeorm';
+import {
+  EducationLevel,
+  Gender,
+  PreferredJobType,
+  StudyLevel,
+  UserRole,
+} from '../../common/enums/index.js';
 import { FairService } from '../../common/fair/fair.service.js';
+import { EmployersService } from '../employers/employers.service.js';
+import { StudentsService } from '../students/students.service.js';
 import { User } from '../users/entities/user.entity.js';
 import { UsersService } from '../users/users.service.js';
 import { AuthService } from './auth.service.js';
+import type { RegisterEmployerDto, RegisterStudentDto } from './dto/index.js';
 
-const FUTURE = new Date('2099-01-01');
 const PAST = new Date('2000-01-01');
+
+const studentDto: RegisterStudentDto = {
+  email: 'student@example.com',
+  password: 'secret123',
+  name: 'Rahim Uddin',
+  aiubId: '22-48123-1',
+  mobileNumber: '01812345678',
+  preferredJobType: PreferredJobType.FULL_TIME,
+  studyLevel: StudyLevel.GRADUATED,
+  preferredIndustryTypes: ['Software'],
+  seminarParticipation: true,
+  address: 'Dhaka',
+  gender: Gender.MALE,
+  educations: [{ level: EducationLevel.BSC, institutionName: 'AIUB' }],
+};
+
+const employerDto: RegisterEmployerDto = {
+  email: 'hr@company.com',
+  password: 'secret123',
+  companyName: 'Acme',
+  industryType: 'Software',
+  about: 'We build things',
+  hrName: 'Hasan',
+  hrEmail: 'hr@company.com',
+  hrMobileNumber: '01712345678',
+};
 
 function makeConfig(overrides: Record<string, unknown> = {}): ConfigService {
   const values: Record<string, unknown> = {
     'auth.bcryptRounds': 4,
-    'fair.studentRegistrationDeadline': FUTURE,
-    'fair.employerRegistrationDeadline': FUTURE,
+    'fair.studentRegistrationDeadline': null,
+    'fair.employerRegistrationDeadline': null,
     ...overrides,
   };
-  const get = (key: string) => values[key];
   return {
-    get,
+    get: (key: string) => values[key],
     getOrThrow: (key: string) => {
       if (!(key in values)) throw new Error(`missing config ${key}`);
       return values[key];
@@ -38,6 +72,7 @@ function makeUser(partial: Partial<User> = {}): User {
     email: 'student@example.com',
     passwordHash: '',
     role: UserRole.STUDENT,
+    tokenVersion: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...partial,
@@ -45,20 +80,35 @@ function makeUser(partial: Partial<User> = {}): User {
 }
 
 describe('AuthService', () => {
+  const manager = { name: 'transaction-manager' };
+  const jwt = new JwtService({ secret: 'test-secret' });
   let users: {
     emailExists: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     findByEmailWithPassword: ReturnType<typeof vi.fn>;
     findById: ReturnType<typeof vi.fn>;
   };
-  const jwt = new JwtService({ secret: 'test-secret' });
+  let students: {
+    createForUser: ReturnType<typeof vi.fn>;
+    getOwnProfile: ReturnType<typeof vi.fn>;
+  };
+  let employers: {
+    createForUser: ReturnType<typeof vi.fn>;
+    getOwn: ReturnType<typeof vi.fn>;
+  };
 
   function makeService(config = makeConfig()) {
+    const dataSource = {
+      transaction: (work: (m: unknown) => Promise<unknown>) => work(manager),
+    } as unknown as DataSource;
     return new AuthService(
       users as unknown as UsersService,
       jwt,
       config,
       new FairService(config),
+      dataSource,
+      students as unknown as StudentsService,
+      employers as unknown as EmployersService,
     );
   }
 
@@ -71,75 +121,101 @@ describe('AuthService', () => {
       findByEmailWithPassword: vi.fn(),
       findById: vi.fn(),
     };
+    students = {
+      createForUser: vi.fn().mockResolvedValue(undefined),
+      getOwnProfile: vi.fn().mockResolvedValue({ id: 'profile-1' }),
+    };
+    employers = {
+      createForUser: vi.fn().mockResolvedValue(undefined),
+      getOwn: vi.fn().mockResolvedValue({ id: 'company-1' }),
+    };
   });
 
-  describe('register', () => {
-    it('creates a student, hashes the password and returns a token', async () => {
-      const res = await makeService().registerStudent({
-        email: 'student@example.com',
-        password: 'secret123',
-      });
+  describe('registerStudent', () => {
+    it('creates account and profile in one transaction and returns both', async () => {
+      const res = await makeService().registerStudent(studentDto);
 
-      const saved = users.create.mock.calls[0][0];
-      expect(saved.role).toBe(UserRole.STUDENT);
-      expect(saved.passwordHash).not.toBe('secret123');
-      expect(saved.passwordHash).toMatch(/^\$2[aby]\$/);
+      const [userData, userManager] = users.create.mock.calls[0];
+      expect(userData.role).toBe(UserRole.STUDENT);
+      expect(userData.passwordHash).toMatch(/^\$2[aby]\$/);
+      expect(userManager).toBe(manager);
 
-      expect(res.user).toEqual({
-        id: 'user-1',
-        email: 'student@example.com',
-        role: UserRole.STUDENT,
-      });
-      const payload = jwt.verify(res.accessToken);
-      expect(payload).toMatchObject({ sub: 'user-1', role: 'student' });
-    });
+      const [profileManager, userId, profile] =
+        students.createForUser.mock.calls[0];
+      expect(profileManager).toBe(manager);
+      expect(userId).toBe('user-1');
+      expect(profile).not.toHaveProperty('password');
+      expect(profile).not.toHaveProperty('email');
+      expect(profile.aiubId).toBe('22-48123-1');
+      expect(profile.educations).toHaveLength(1);
 
-    it('creates an employer with the employer role', async () => {
-      await makeService().registerEmployer({
-        email: 'hr@company.com',
-        password: 'secret123',
+      expect(res.profile).toEqual({ id: 'profile-1' });
+      expect(jwt.verify(res.accessToken)).toMatchObject({
+        sub: 'user-1',
+        role: 'student',
       });
-      expect(users.create.mock.calls[0][0].role).toBe(UserRole.EMPLOYER);
     });
 
     it('rejects an email that is already registered', async () => {
       users.emailExists.mockResolvedValue(true);
       await expect(
-        makeService().registerStudent({
-          email: 'student@example.com',
-          password: 'secret123',
-        }),
+        makeService().registerStudent(studentDto),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(users.create).not.toHaveBeenCalled();
     });
 
-    it('turns a database unique violation into a conflict', async () => {
-      users.create.mockRejectedValue({ code: '23505' });
-      await expect(
-        makeService().registerStudent({
-          email: 'student@example.com',
-          password: 'secret123',
-        }),
-      ).rejects.toBeInstanceOf(ConflictException);
+    it('passes on profile errors so the transaction rolls back', async () => {
+      students.createForUser.mockRejectedValue(
+        new ConflictException('This AIUB ID is already registered'),
+      );
+      await expect(makeService().registerStudent(studentDto)).rejects.toThrow(
+        'This AIUB ID is already registered',
+      );
     });
 
-    it('blocks student registration after the student deadline', async () => {
+    it('names the AIUB ID when the database reports it as taken', async () => {
+      students.createForUser.mockRejectedValue({
+        code: '23505',
+        detail: 'Key (aiub_id)=(22-48123-1) already exists.',
+      });
+      await expect(makeService().registerStudent(studentDto)).rejects.toThrow(
+        'This AIUB ID is already registered',
+      );
+    });
+
+    it('names the email when the database reports it as taken', async () => {
+      users.create.mockRejectedValue({
+        code: '23505',
+        detail: 'Key (email)=(student@example.com) already exists.',
+      });
+      await expect(makeService().registerStudent(studentDto)).rejects.toThrow(
+        'An account with this email already exists',
+      );
+    });
+
+    it('is blocked when a student cutoff is set and has passed', async () => {
       const service = makeService(
         makeConfig({ 'fair.studentRegistrationDeadline': PAST }),
       );
+      await expect(service.registerStudent(studentDto)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      // Employers have their own cutoff.
       await expect(
-        service.registerStudent({
-          email: 'student@example.com',
-          password: 'secret123',
-        }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      // Employers have their own, later deadline.
-      await expect(
-        service.registerEmployer({
-          email: 'hr@company.com',
-          password: 'secret123',
-        }),
+        service.registerEmployer(employerDto),
       ).resolves.toBeDefined();
+    });
+  });
+
+  describe('registerEmployer', () => {
+    it('creates account and company profile together', async () => {
+      const res = await makeService().registerEmployer(employerDto);
+      expect(users.create.mock.calls[0][0].role).toBe(UserRole.EMPLOYER);
+      const [profileManager, , profile] = employers.createForUser.mock.calls[0];
+      expect(profileManager).toBe(manager);
+      expect(profile.companyName).toBe('Acme');
+      expect(profile).not.toHaveProperty('password');
+      expect(res.profile).toEqual({ id: 'company-1' });
     });
   });
 

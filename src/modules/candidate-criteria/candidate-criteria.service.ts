@@ -12,6 +12,7 @@ import {
 } from '../../common/dto/pagination.dto.js';
 import { FairService } from '../../common/fair/fair.service.js';
 import { assertNotNull } from '../../common/utils/validation.util.js';
+import { EmployerStatus } from '../../common/enums/index.js';
 import { EmployersService } from '../employers/employers.service.js';
 import { SearchStudentsQueryDto } from '../students/dto/index.js';
 import {
@@ -101,7 +102,10 @@ export class CandidateCriteriaService {
     query: ListCandidateCriteriaQueryDto,
   ): Promise<Paginated<CandidateCriteria>> {
     const [items, total] = await this.criteria.findAndCount({
-      where: query.employerId ? { employerId: query.employerId } : {},
+      where: {
+        ...(query.employerId ? { employerId: query.employerId } : {}),
+        employer: { status: EmployerStatus.APPROVED },
+      },
       relations: { employer: true },
       order: { createdAt: 'DESC' },
       skip: query.skip,
@@ -112,7 +116,7 @@ export class CandidateCriteriaService {
 
   async getById(id: string): Promise<CandidateCriteria> {
     const row = await this.criteria.findOne({
-      where: { id },
+      where: { id, employer: { status: EmployerStatus.APPROVED } },
       relations: { employer: true },
     });
     if (!row) throw new NotFoundException('Candidate criteria not found');

@@ -2,6 +2,7 @@ import { access } from 'node:fs/promises';
 import {
   Controller,
   ForbiddenException,
+  UnauthorizedException,
   Get,
   NotFoundException,
   Param,
@@ -9,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { CurrentUser } from '../../common/decorators/index.js';
+import { CurrentUser, OptionalAuth } from '../../common/decorators/index.js';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface.js';
 import { FileKind } from './file-kind.enum.js';
 import { FileStorageService } from './file-storage.service.js';
@@ -24,15 +25,16 @@ export class UploadsController {
   ) {}
 
   @Get(':kind/:filename')
+  @OptionalAuth()
   @ApiOperation({
     summary: 'Download a stored file',
     description:
-      'Pictures, logos and attachments: any logged-in user. CVs: employers, or the student who owns the CV.',
+      'Logos: anyone. Pictures and attachments: any logged-in user. CVs: employers, or the student who owns the CV.',
   })
   async download(
     @Param('kind') kind: string,
     @Param('filename') filename: string,
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | undefined,
     @Res() res: Response,
   ): Promise<void> {
     if (!this.storage.isValid(kind, filename)) {
@@ -40,8 +42,12 @@ export class UploadsController {
     }
     const fileKind = kind as FileKind;
     const url = this.storage.urlFor(fileKind, filename);
-    if (!(await this.uploadsService.canAccess(user, fileKind, url))) {
-      throw new ForbiddenException('You cannot access this file');
+    // Company logos appear on the public job list; everything else needs login.
+    if (fileKind !== FileKind.LOGO) {
+      if (!user) throw new UnauthorizedException('Log in to view this file');
+      if (!(await this.uploadsService.canAccess(user, fileKind, url))) {
+        throw new ForbiddenException('You cannot access this file');
+      }
     }
 
     const path = this.storage.absolutePath(fileKind, filename);

@@ -1,3 +1,4 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsEnum,
@@ -21,6 +22,7 @@ export class CreateCvDropDto {
   @Transform(emptyToNull)
   @IsString()
   @MaxLength(500)
+  @ApiPropertyOptional({ example: 'Interested in backend developer roles.' })
   note?: string | null;
 }
 

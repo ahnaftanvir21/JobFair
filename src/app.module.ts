@@ -4,9 +4,17 @@ import { TypeOrmModule, type TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { APP_GUARD } from '@nestjs/core';
 import { FairModule } from './common/fair/fair.module.js';
 import { JwtAuthGuard, RolesGuard } from './common/guards/index.js';
-import { authConfig, databaseConfig, fairConfig } from './config/index.js';
+import {
+  authConfig,
+  databaseConfig,
+  fairConfig,
+  mailConfig,
+} from './config/index.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { MailModule } from './modules/mail/mail.module.js';
+import { EmployerApprovalGuard } from './modules/employers/employer-approval.guard.js';
+import { AdminModule } from './modules/admin/admin.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { StudentsModule } from './modules/students/students.module.js';
@@ -22,7 +30,7 @@ import { UploadsModule } from './modules/uploads/uploads.module.js';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-      load: [authConfig, databaseConfig, fairConfig],
+      load: [authConfig, databaseConfig, fairConfig, mailConfig],
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -30,6 +38,7 @@ import { UploadsModule } from './modules/uploads/uploads.module.js';
         config.getOrThrow<TypeOrmModuleOptions>('database'),
     }),
     FairModule,
+    MailModule,
     AuthModule,
     UsersModule,
     StudentsModule,
@@ -39,13 +48,15 @@ import { UploadsModule } from './modules/uploads/uploads.module.js';
     CvDropsModule,
     CandidateCriteriaModule,
     UploadsModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
-    // Order matters: authenticate first, then check roles.
+    // Order matters: authenticate, check the role, then employer approval.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: EmployerApprovalGuard },
   ],
 })
 export class AppModule {}

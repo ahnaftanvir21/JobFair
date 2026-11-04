@@ -1,7 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
+import { setupSwagger } from './swagger.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,20 +15,8 @@ async function bootstrap() {
     }),
   );
 
-  // Interactive API docs at /api/docs. Click "Authorize" and paste the accessToken.
-  const config = new DocumentBuilder()
-    .setTitle('AIUB Job Fair 2026 API')
-    .setDescription(
-      'Students register, build profiles, apply for jobs and drop CVs. ' +
-        'Employers build company profiles, post jobs with questions and review applicants.',
-    )
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addSecurityRequirements('bearer')
-    .build();
-  SwaggerModule.setup('api/docs', app, () =>
-    SwaggerModule.createDocument(app, config),
-  );
+  // Interactive API docs at /api/docs.
+  setupSwagger(app);
 
   await app.listen(process.env.PORT ?? 3000);
 }

@@ -9,3 +9,4 @@ export * from './joining-date.enum.js';
 export * from './reference-relation.enum.js';
 export * from './application-status.enum.js';
 export * from './question-type.enum.js';
+export * from './employer-status.enum.js';

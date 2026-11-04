@@ -1,4 +1,4 @@
-import { PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsEnum,
@@ -17,22 +17,29 @@ export class CreateCandidateCriteriaDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
+  @ApiProperty({ example: 'Fresh CSE graduates for 2027 intake' })
   title: string;
 
   @Transform(trimValue)
   @IsString()
   @IsNotEmpty()
   @MaxLength(5000)
+  @ApiProperty({
+    example:
+      'We are looking for graduates who enjoy problem solving and want to grow as backend engineers.',
+  })
   description: string;
 
   /** Used for matching. Leave empty for any. */
   @IsOptional()
   @IsEnum(PreferredJobType)
+  @ApiPropertyOptional({ example: 'full_time' })
   preferredJobType?: PreferredJobType | null;
 
   /** Used for matching. Leave empty for any. */
   @IsOptional()
   @IsEnum(StudyLevel)
+  @ApiPropertyOptional({ example: 'graduated' })
   studyLevel?: StudyLevel | null;
 
   /** Matched against students' preferred industries. Leave empty for any. */
@@ -40,12 +47,14 @@ export class CreateCandidateCriteriaDto {
   @Transform(emptyToNull)
   @IsString()
   @MaxLength(120)
+  @ApiPropertyOptional({ example: 'Software' })
   industryType?: string | null;
 
   @IsOptional()
   @Transform(emptyToNull)
   @IsString()
   @MaxLength(3000)
+  @ApiPropertyOptional({ example: 'TypeScript, SQL, Git' })
   skills?: string | null;
 }
 

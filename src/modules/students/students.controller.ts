@@ -22,7 +22,6 @@ import {
   CreateEducationDto,
   CreateExperienceDto,
   CreateReferenceDto,
-  CreateStudentProfileDto,
   SearchStudentsQueryDto,
   UpdateEducationDto,
   UpdateExperienceDto,
@@ -37,15 +36,6 @@ export class StudentsController {
   constructor(private readonly studentsService: StudentsService) {}
 
   // ---------- Own profile (students) ----------
-
-  @Post('me')
-  @Roles(UserRole.STUDENT)
-  @ApiOperation({
-    summary: 'Create my profile (flyer step 1, step 2 fields optional)',
-  })
-  create(@CurrentUser() user: AuthUser, @Body() dto: CreateStudentProfileDto) {
-    return this.studentsService.create(user.id, dto);
-  }
 
   @Get('me')
   @Roles(UserRole.STUDENT)
@@ -175,14 +165,14 @@ export class StudentsController {
   // ---------- Browse (employers) ----------
 
   @Get()
-  @Roles(UserRole.EMPLOYER)
-  @ApiOperation({ summary: 'Search all students' })
+  @Roles(UserRole.EMPLOYER, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Search all students (approved employers and admins)' })
   search(@Query() query: SearchStudentsQueryDto) {
     return this.studentsService.search(query);
   }
 
   @Get(':id')
-  @Roles(UserRole.EMPLOYER)
+  @Roles(UserRole.EMPLOYER, UserRole.ADMIN)
   @ApiOperation({
     summary: 'One student with education, experience and references',
   })

@@ -1,4 +1,4 @@
-import { PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -31,22 +31,27 @@ export class CreateStudentProfileDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
+  @ApiProperty({ example: 'Rahim Uddin' })
   name: string;
 
   /** Format XX-XXXXX-X, e.g. 22-48123-1 */
   @Transform(trimValue)
   @Matches(AIUB_ID, { message: 'AIUB ID must look like 22-48123-1' })
+  @ApiProperty({ example: '22-48123-1' })
   aiubId: string;
 
   /** Bangladeshi mobile, e.g. 01712345678 */
   @Transform(trimValue)
   @Matches(BD_MOBILE, { message: 'Enter a valid Bangladeshi mobile number' })
+  @ApiProperty({ example: '01812345678' })
   mobileNumber: string;
 
   @IsEnum(PreferredJobType)
+  @ApiProperty({ example: 'full_time' })
   preferredJobType: PreferredJobType;
 
   @IsEnum(StudyLevel)
+  @ApiProperty({ example: 'graduated' })
   studyLevel: StudyLevel;
 
   /** Preferred company or industry types, e.g. ["Software", "Banking"] */
@@ -61,38 +66,47 @@ export class CreateStudentProfileDto {
       ? value.map((v) => (typeof v === 'string' ? v.trim() : v))
       : value,
   )
+  @ApiProperty({ example: ['Software', 'Telecom'] })
   preferredIndustryTypes: string[];
 
   /** "Which seminar participation?" Yes or No */
   @IsBoolean()
+  @ApiProperty({ example: true })
   seminarParticipation: boolean;
 
   @IsOptional()
   @Transform(emptyToNull)
   @IsString()
   @MaxLength(300)
+  @ApiPropertyOptional({ example: 'House 12, Road 5, Kuril, Dhaka' })
   address?: string | null;
 
   @IsOptional()
   @IsEnum(Gender)
+  @ApiPropertyOptional({ example: 'male' })
   gender?: Gender | null;
 
   @IsOptional()
   @Transform(emptyToNull)
   @IsString()
   @MaxLength(3000)
+  @ApiPropertyOptional({
+    example: 'Member of AIUB Computer Club; volunteer at a coding bootcamp',
+  })
   extracurricularActivities?: string | null;
 
   @IsOptional()
   @Transform(emptyToNull)
   @IsUrl({ require_protocol: true }, { message: 'LinkedIn must be a full URL' })
   @MaxLength(255)
+  @ApiPropertyOptional({ example: 'https://www.linkedin.com/in/rahim-uddin' })
   linkedinUrl?: string | null;
 
   @IsOptional()
   @Transform(emptyToNull)
   @IsUrl({ require_protocol: true }, { message: 'GitHub must be a full URL' })
   @MaxLength(255)
+  @ApiPropertyOptional({ example: 'https://github.com/rahim-uddin' })
   githubUrl?: string | null;
 }
 

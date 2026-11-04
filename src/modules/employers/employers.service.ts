@@ -1,11 +1,8 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { paginated, type Paginated } from '../../common/dto/pagination.dto.js';
+import { EmployerStatus } from '../../common/enums/index.js';
 import { todayInDhaka } from '../../common/utils/date.util.js';
 import { likePattern } from '../../common/utils/text.util.js';
 import { assertNotNull } from '../../common/utils/validation.util.js';
@@ -36,16 +33,13 @@ export class EmployersService {
     private readonly storage: FileStorageService,
   ) {}
 
-  async create(
+  /** Runs inside the registration transaction, so a failure also undoes the account. */
+  async createForUser(
+    manager: EntityManager,
     userId: string,
     dto: CreateEmployerProfileDto,
-  ): Promise<EmployerProfile> {
-    if (await this.profiles.existsBy({ userId })) {
-      throw new ConflictException(
-        'Company profile already exists. Use PATCH /employers/me to change it.',
-      );
-    }
-    return this.profiles.save(this.profiles.create({ ...dto, userId }));
+  ): Promise<void> {
+    await manager.save(manager.create(EmployerProfile, { ...dto, userId }));
   }
 
   async update(
@@ -54,7 +48,13 @@ export class EmployersService {
   ): Promise<EmployerProfile> {
     assertNotNull(dto, REQUIRED_EMPLOYER_FIELDS);
     const profile = await this.requireProfileByUser(userId);
-    return this.profiles.save(this.profiles.merge(profile, dto));
+    this.profiles.merge(profile, dto);
+    // Editing after a rejection sends the company back to the admin for review.
+    if (profile.status === EmployerStatus.REJECTED) {
+      profile.status = EmployerStatus.PENDING;
+      profile.rejectionReason = null;
+    }
+    return this.profiles.save(profile);
   }
 
   getOwn(userId: string): Promise<EmployerProfile> {
@@ -77,19 +77,18 @@ export class EmployersService {
   async requireProfileByUser(userId: string): Promise<EmployerProfile> {
     const profile = await this.profiles.findOneBy({ userId });
     if (!profile) {
-      throw new NotFoundException(
-        'Create your company profile first with POST /employers/me',
-      );
+      throw new NotFoundException('Company profile not found');
     }
     return profile;
   }
 
-  /** Company search for students: "Search company you're looking for". */
+  /** Company search for students: "Search company you're looking for". Approved companies only. */
   async search(
     query: SearchEmployersQueryDto,
   ): Promise<Paginated<EmployerSummary>> {
     const qb = this.profiles
       .createQueryBuilder('e')
+      .where('e.status = :approved', { approved: EmployerStatus.APPROVED })
       .orderBy('e.companyName', 'ASC')
       .skip(query.skip)
       .take(query.limit);
@@ -114,9 +113,12 @@ export class EmployersService {
     );
   }
 
-  /** Company page with its open job posts. */
+  /** Company page with its open job posts. Approved companies only. */
   async getById(id: string): Promise<EmployerDetail> {
-    const profile = await this.profiles.findOneBy({ id });
+    const profile = await this.profiles.findOneBy({
+      id,
+      status: EmployerStatus.APPROVED,
+    });
     if (!profile) throw new NotFoundException('Company not found');
     const openJobs = await this.jobs
       .createQueryBuilder('j')

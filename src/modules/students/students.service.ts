@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { paginated, type Paginated } from '../../common/dto/pagination.dto.js';
 import { EducationLevel } from '../../common/enums/index.js';
 import { likePattern } from '../../common/utils/text.util.js';
@@ -41,6 +41,13 @@ export interface ProfileCompleteness {
   missing: string[];
 }
 
+/** Profile data collected at registration (everything except files). */
+export type StudentRegistrationData = CreateStudentProfileDto & {
+  educations: CreateEducationDto[];
+  experiences?: CreateExperienceDto[];
+  references?: CreateReferenceDto[];
+};
+
 export type StudentProfileView = Omit<StudentProfile, 'user'> & {
   email: string;
   completeness: ProfileCompleteness;
@@ -62,17 +69,47 @@ export class StudentsService {
 
   // ---------- Profile ----------
 
-  async create(
+  /**
+   * Creates the profile with its education, experience and references.
+   * Runs inside the registration transaction, so a failure also undoes the account.
+   */
+  async createForUser(
+    manager: EntityManager,
     userId: string,
-    dto: CreateStudentProfileDto,
-  ): Promise<StudentProfileView> {
-    if (await this.profiles.existsBy({ userId })) {
+    data: StudentRegistrationData,
+  ): Promise<void> {
+    const { educations, experiences = [], references = [], ...fields } = data;
+
+    const levels = educations
+      .map((e) => e.level)
+      .filter((level) => level !== EducationLevel.PROFESSIONAL);
+    const repeated = levels.find((level, i) => levels.indexOf(level) !== i);
+    if (repeated) {
       throw new ConflictException(
-        'Profile already exists. Use PATCH /students/me to change it.',
+        `${repeated.toUpperCase()} was added more than once`,
       );
     }
-    await this.saveProfile(this.profiles.create({ ...dto, userId }));
-    return this.getOwnProfile(userId);
+    for (const e of experiences) this.assertDateRange(e.startDate, e.endDate);
+
+    if (await manager.existsBy(StudentProfile, { aiubId: fields.aiubId })) {
+      throw new ConflictException('This AIUB ID is already registered');
+    }
+
+    const profile = await manager.save(
+      manager.create(StudentProfile, { ...fields, userId }),
+    );
+    const studentId = profile.id;
+    await manager.save(
+      educations.map((e) =>
+        manager.create(Education, { ...e, cgpa: this.cgpa(e.cgpa), studentId }),
+      ),
+    );
+    await manager.save(
+      experiences.map((e) => manager.create(Experience, { ...e, studentId })),
+    );
+    await manager.save(
+      references.map((r) => manager.create(Reference, { ...r, studentId })),
+    );
   }
 
   async update(
@@ -426,8 +463,6 @@ export class StudentsService {
   }
 
   private profileMissing(): NotFoundException {
-    return new NotFoundException(
-      'Create your student profile first with POST /students/me',
-    );
+    return new NotFoundException('Student profile not found');
   }
 }

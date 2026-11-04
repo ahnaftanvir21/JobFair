@@ -6,7 +6,7 @@ Employers build company profiles, post jobs with their own questions, and review
 ## Setup
 
 1. Install packages: `npm install`
-2. Copy `.env.example` to `.env` and set `DB_PASSWORD` and a long random `JWT_SECRET`.
+2. Copy `.env.example` to `.env` and set `DB_PASSWORD` and a long random `JWT_SECRET`. Create an admin with `npm run admin:create -- admin@example.com "a-long-password"` (start the server once first). For real password-reset emails, fill the `SMTP_*` settings; left blank, reset emails are saved to `mail-outbox/` instead.
 3. Create the database: `npm run db:create`
 4. Start in watch mode: `npm run start:dev`
 

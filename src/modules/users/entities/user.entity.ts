@@ -29,6 +29,13 @@ export class User {
   @Column({ type: 'enum', enum: UserRole })
   role: UserRole;
 
+  /**
+   * Goes up by one on every password reset. Each login token carries the
+   * version it was issued with, so older tokens stop working. Hidden by default.
+   */
+  @Column({ name: 'token_version', type: 'int', default: 0, select: false })
+  tokenVersion: number;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

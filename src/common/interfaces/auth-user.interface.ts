@@ -5,6 +5,8 @@ export interface JwtPayload {
   sub: string;
   email: string;
   role: UserRole;
+  /** The account's token version when the token was issued (see User.tokenVersion). */
+  tv?: number;
 }
 
 /** The logged-in user attached to each request by the JWT guard. */

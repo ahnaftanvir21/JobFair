@@ -6,23 +6,38 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcryptjs';
+import { DataSource, EntityManager } from 'typeorm';
 import { UserRole } from '../../common/enums/index.js';
 import { FairService } from '../../common/fair/fair.service.js';
 import type {
   AuthUser,
   JwtPayload,
 } from '../../common/interfaces/auth-user.interface.js';
+import { EmployerProfile } from '../employers/entities/employer-profile.entity.js';
+import { EmployersService } from '../employers/employers.service.js';
+import {
+  StudentsService,
+  type StudentProfileView,
+} from '../students/students.service.js';
 import { User } from '../users/entities/user.entity.js';
 import { UsersService } from '../users/users.service.js';
 import {
   AuthResponseDto,
   AuthUserDto,
   LoginDto,
-  RegisterDto,
+  RegisterEmployerDto,
+  RegisterStudentDto,
 } from './dto/index.js';
 
 /** Postgres error code for a unique-constraint violation. */
 const PG_UNIQUE_VIOLATION = '23505';
+
+export type StudentRegistrationResponse = AuthResponseDto & {
+  profile: StudentProfileView;
+};
+export type EmployerRegistrationResponse = AuthResponseDto & {
+  profile: EmployerProfile;
+};
 
 @Injectable()
 export class AuthService {
@@ -31,14 +46,47 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly fair: FairService,
+    private readonly dataSource: DataSource,
+    private readonly studentsService: StudentsService,
+    private readonly employersService: EmployersService,
   ) {}
 
-  registerStudent(dto: RegisterDto): Promise<AuthResponseDto> {
-    return this.register(dto, UserRole.STUDENT);
+  /** Creates the student account and full profile together. */
+  async registerStudent(
+    dto: RegisterStudentDto,
+  ): Promise<StudentRegistrationResponse> {
+    this.fair.assertStudentWindowOpen('Student registration');
+    const { email, password, ...profile } = dto;
+    const user = await this.createAccount(
+      email,
+      password,
+      UserRole.STUDENT,
+      (manager, userId) =>
+        this.studentsService.createForUser(manager, userId, profile),
+    );
+    return {
+      ...(await this.buildResponse(user)),
+      profile: await this.studentsService.getOwnProfile(user.id),
+    };
   }
 
-  registerEmployer(dto: RegisterDto): Promise<AuthResponseDto> {
-    return this.register(dto, UserRole.EMPLOYER);
+  /** Creates the employer account and company profile together. */
+  async registerEmployer(
+    dto: RegisterEmployerDto,
+  ): Promise<EmployerRegistrationResponse> {
+    this.fair.assertEmployerWindowOpen('Employer registration');
+    const { email, password, ...profile } = dto;
+    const user = await this.createAccount(
+      email,
+      password,
+      UserRole.EMPLOYER,
+      (manager, userId) =>
+        this.employersService.createForUser(manager, userId, profile),
+    );
+    return {
+      ...(await this.buildResponse(user)),
+      profile: await this.employersService.getOwn(user.id),
+    };
   }
 
   async login(dto: LoginDto): Promise<AuthResponseDto> {
@@ -56,44 +104,44 @@ export class AuthService {
     return this.toUserDto(user);
   }
 
-  private async register(
-    dto: RegisterDto,
+  /**
+   * Saves the user and the profile in one transaction.
+   * If the profile fails (bad data, AIUB ID taken), the account is not created either.
+   */
+  private async createAccount(
+    email: string,
+    password: string,
     role: UserRole,
-  ): Promise<AuthResponseDto> {
-    this.assertRegistrationOpen(role);
-
-    if (await this.usersService.emailExists(dto.email)) {
+    createProfile: (manager: EntityManager, userId: string) => Promise<void>,
+  ): Promise<User> {
+    if (await this.usersService.emailExists(email)) {
       throw new ConflictException('An account with this email already exists');
     }
-
     const passwordHash = await hash(
-      dto.password,
+      password,
       this.config.getOrThrow<number>('auth.bcryptRounds'),
     );
 
     try {
-      const user = await this.usersService.create({
-        email: dto.email,
-        passwordHash,
-        role,
+      return await this.dataSource.transaction(async (manager) => {
+        const user = await this.usersService.create(
+          { email, passwordHash, role },
+          manager,
+        );
+        await createProfile(manager, user.id);
+        return user;
       });
-      return this.buildResponse(user);
     } catch (err) {
-      // Two requests with the same email at the same moment.
+      // Two requests with the same email or AIUB ID at the same moment.
       if ((err as { code?: string }).code === PG_UNIQUE_VIOLATION) {
+        const detail = (err as { detail?: string }).detail ?? '';
         throw new ConflictException(
-          'An account with this email already exists',
+          detail.includes('aiub_id')
+            ? 'This AIUB ID is already registered'
+            : 'An account with this email already exists',
         );
       }
       throw err;
-    }
-  }
-
-  private assertRegistrationOpen(role: UserRole): void {
-    if (role === UserRole.STUDENT) {
-      this.fair.assertStudentWindowOpen('Student registration');
-    } else {
-      this.fair.assertEmployerWindowOpen('Employer registration');
     }
   }
 
@@ -102,6 +150,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      tv: user.tokenVersion ?? 0,
     };
     return {
       accessToken: await this.jwtService.signAsync(payload),

@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { BadRequestException } from '@nestjs/common';
 import { plainToInstance, Transform } from 'class-transformer';
 import {
@@ -17,12 +18,14 @@ import { trimValue } from '../../../common/utils/text.util.js';
 
 export class AnswerDto {
   @IsUUID()
+  @ApiProperty({ example: '3fa85f64-5717-4562-b3fc-2c963f66afa6' })
   questionId: string;
 
   @Transform(trimValue)
   @IsString()
   @IsNotEmpty()
   @MaxLength(3000)
+  @ApiProperty({ example: 'I enjoy building reliable backend systems.' })
   answer: string;
 }
 
@@ -51,6 +54,7 @@ function parseAnswers({ value }: { value: unknown }): unknown {
 
 export class ApplyDto {
   @IsEnum(JoiningDate)
+  @ApiProperty({ example: 'within_1_week' })
   joiningDate: JoiningDate;
 
   /** One entry per question. In multipart forms, send as a JSON string. */
@@ -64,7 +68,15 @@ export class ApplyDto {
 
 export class UpdateApplicationStatusDto {
   @IsEnum(ApplicationStatus)
+  @ApiProperty({ example: 'shortlisted' })
   status: ApplicationStatus;
+}
+
+/** Student's own list: every application at once, optionally by status. */
+export class MyApplicationsQueryDto {
+  @IsOptional()
+  @IsEnum(ApplicationStatus)
+  status?: ApplicationStatus;
 }
 
 export class ListApplicationsQueryDto extends PaginationQueryDto {

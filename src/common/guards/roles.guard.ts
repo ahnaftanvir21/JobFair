@@ -23,6 +23,15 @@ export class RolesGuard implements CanActivate {
 
     const user = context.switchToHttp().getRequest<{ user?: AuthUser }>().user;
     if (user && roles.includes(user.role)) return true;
-    throw new ForbiddenException('You do not have access to this resource');
+    const allowed = roles.map((r) => `${r}s`).join(' or ');
+    throw new ForbiddenException(
+      user
+        ? `Only ${allowed} can do this. You are logged in as ${article(user.role)} ${user.role}.`
+        : `Only ${allowed} can do this`,
+    );
   }
+}
+
+function article(word: string): string {
+  return /^[aeiou]/i.test(word) ? 'an' : 'a';
 }

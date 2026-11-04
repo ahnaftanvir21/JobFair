@@ -14,11 +14,20 @@ export class UploadsService {
     kind: FileKind,
     url: string,
   ): Promise<boolean> {
-    // Pictures, logos and criteria attachments are visible to every logged-in user.
-    if (kind !== FileKind.CV) return true;
+    if (user.role === UserRole.ADMIN) return true;
 
-    // Employers can browse all students, so they can read every CV.
-    if (user.role === UserRole.EMPLOYER) return true;
+    // Employers can browse all students, so they can read every file,
+    // but only once an admin has approved the company.
+    if (user.role === UserRole.EMPLOYER) {
+      const rows: unknown[] = await this.dataSource.query(
+        `SELECT 1 FROM employer_profiles WHERE user_id = $1 AND status = 'approved'`,
+        [user.id],
+      );
+      return rows.length > 0;
+    }
+
+    // Pictures and criteria attachments are visible to every logged-in student.
+    if (kind !== FileKind.CV) return true;
 
     // A student can read only their own CVs.
     const rows: unknown[] = await this.dataSource.query(

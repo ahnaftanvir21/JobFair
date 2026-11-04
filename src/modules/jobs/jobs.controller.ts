@@ -10,7 +10,11 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto.js';
-import { CurrentUser, Roles } from '../../common/decorators/index.js';
+import {
+  CurrentUser,
+  OptionalAuth,
+  Roles,
+} from '../../common/decorators/index.js';
 import { UserRole } from '../../common/enums/index.js';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface.js';
 import {
@@ -42,18 +46,28 @@ export class JobsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Search open jobs' })
+  @OptionalAuth()
+  @ApiOperation({
+    summary: 'Browse open jobs (no login needed)',
+    description: 'Anyone can browse. Only logged-in students can apply.',
+  })
   search(@Query() query: SearchJobsQueryDto) {
     return this.jobsService.search(query);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Job details with questions' })
+  @OptionalAuth()
+  @ApiOperation({
+    summary: 'Job details with questions (no login needed)',
+    description:
+      'Visitors see the public company details. Logged-in users also see the HR contact, ' +
+      'and students see whether they already applied.',
+  })
   getOne(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | undefined,
   ) {
-    return this.jobsService.getById(id, user);
+    return this.jobsService.getForViewer(id, user);
   }
 
   @Patch(':id')

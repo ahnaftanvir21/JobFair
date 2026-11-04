@@ -19,6 +19,7 @@ import { ApplicationsService } from './applications.service.js';
 import {
   ApplyDto,
   ListApplicationsQueryDto,
+  MyApplicationsQueryDto,
   UpdateApplicationStatusDto,
 } from './dto/application.dto.js';
 
@@ -59,11 +60,13 @@ export class ApplicationsController {
 
   @Get('applications/mine')
   @Roles(UserRole.STUDENT)
-  @ApiOperation({ summary: 'My applications with status' })
-  mine(
-    @CurrentUser() user: AuthUser,
-    @Query() query: ListApplicationsQueryDto,
-  ) {
+  @ApiOperation({
+    summary: 'All my applications',
+    description:
+      'Every application in one response, newest first, with the job and company, ' +
+      'my answers and their questions, joining date, CV and status. Filter with status.',
+  })
+  mine(@CurrentUser() user: AuthUser, @Query() query: MyApplicationsQueryDto) {
     return this.applicationsService.mine(user.id, query);
   }
 
@@ -80,7 +83,7 @@ export class ApplicationsController {
 
   @Get('applications/:id')
   @ApiOperation({
-    summary: 'One application (applicant or the hiring company)',
+    summary: 'One application (applicant, the hiring company or an admin)',
   })
   getOne(
     @CurrentUser() user: AuthUser,
