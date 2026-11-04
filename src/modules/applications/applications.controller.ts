@@ -83,7 +83,7 @@ export class ApplicationsController {
 
   @Get('applications/:id')
   @ApiOperation({
-    summary: 'One application (applicant, the hiring company or an admin)',
+    summary: 'One application (applicant or the hiring company)',
   })
   getOne(
     @CurrentUser() user: AuthUser,

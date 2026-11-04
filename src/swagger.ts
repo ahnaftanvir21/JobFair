@@ -11,12 +11,12 @@ import {
 import { UserRole } from './common/enums/index.js';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
-const ALL_ROLES = Object.values(UserRole).map((role) => ({ [role]: [] }));
+const ALL_ROLES = [UserRole.STUDENT, UserRole.EMPLOYER].map((role) => ({ [role]: [] }));
 
 /**
  * Interactive API docs at /api/docs.
  *
- * There are three token boxes under "Authorize": student, employer and admin.
+ * There are two token boxes under "Authorize": student and employer.
  * Each role-only route uses only its role's token, and shared routes accept any. The server checks the role
  * inside the token on every request, so a token in the wrong box still gets 403.
  */
@@ -25,12 +25,10 @@ export function setupSwagger(app: INestApplication): void {
     .setTitle('AIUB Job Fair 2026 API')
     .setDescription(
       'Students register, build profiles, apply for jobs and drop CVs. ' +
-        'Employers build company profiles, post jobs with questions and review applicants ' +
-        'once an admin approves their company. Admins review companies and see overall numbers.\n\n' +
+        'Employers build company profiles, post jobs with questions and review applicants.\n\n' +
         '**Tokens:** logging in or registering here fills the matching token box automatically. ' +
         'You can also paste a token under **Authorize**: a student token in "student", ' +
-        'an employer token in "employer", an admin token in "admin". ' +
-        'Admins log in with POST /auth/login; create one with npm run admin:create.',
+        'an employer token in "employer".',
     )
     .setVersion('1.0')
     .addBearerAuth(
@@ -50,15 +48,6 @@ export function setupSwagger(app: INestApplication): void {
         description: 'Token of an employer account',
       },
       UserRole.EMPLOYER,
-    )
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'Token of an admin account',
-      },
-      UserRole.ADMIN,
     )
     .build();
 
@@ -94,7 +83,7 @@ export function setupSwagger(app: INestApplication): void {
               const role = data.user && data.user.role;
               if (
                 data.accessToken &&
-                (role === 'student' || role === 'employer' || role === 'admin')
+                (role === 'student' || role === 'employer')
               ) {
                 (
                   window as unknown as {

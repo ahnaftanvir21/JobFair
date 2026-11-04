@@ -22,7 +22,7 @@
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
     "db:create": "node scripts/create-db.mjs",
     "test:smoke": "node scripts/smoke-test.mjs",
-    "admin:create": "node scripts/create-admin.mjs"
+    "db:seed": "node scripts/seed.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

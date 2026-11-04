@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -57,6 +58,11 @@ export class AuthService {
   ): Promise<StudentRegistrationResponse> {
     this.fair.assertStudentWindowOpen('Student registration');
     const { email, password, ...profile } = dto;
+    if (email.split('@')[0] !== profile.aiubId) {
+      throw new BadRequestException(
+        'Your AIUB ID must match your student email (the part before @)',
+      );
+    }
     const user = await this.createAccount(
       email,
       password,
@@ -76,6 +82,11 @@ export class AuthService {
   ): Promise<EmployerRegistrationResponse> {
     this.fair.assertEmployerWindowOpen('Employer registration');
     const { email, password, ...profile } = dto;
+    if (email.endsWith('@student.aiub.edu')) {
+      throw new BadRequestException(
+        'Student emails cannot register a company. Use your company email.',
+      );
+    }
     const user = await this.createAccount(
       email,
       password,

@@ -9,6 +9,7 @@ export enum ExperienceJobType {
 /** Employment status of a job post. */
 export enum EmploymentStatus {
   FULL_TIME = 'full_time',
+  INTERNSHIP = 'internship',
   PART_TIME = 'part_time',
   CONTRACTUAL = 'contractual',
 }

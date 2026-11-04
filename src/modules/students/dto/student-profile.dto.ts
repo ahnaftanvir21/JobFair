@@ -1,4 +1,9 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  OmitType,
+  PartialType,
+} from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -24,6 +29,8 @@ import { emptyToNull, trimValue } from '../../../common/utils/text.util.js';
 export const BD_MOBILE = /^(\+?88)?01[3-9]\d{8}$/;
 /** AIUB student ID, e.g. 22-48123-1. */
 export const AIUB_ID = /^\d{2}-\d{5}-\d$/;
+/** AIUB student email, e.g. 23-54445-3@student.aiub.edu. The part before @ is the AIUB ID. */
+export const AIUB_STUDENT_EMAIL = /^(\d{2}-\d{5}-\d)@student\.aiub\.edu$/;
 
 /** Step 1 (flyer) fields are required. Step 2 (sheet 1) fields are optional here. */
 export class CreateStudentProfileDto {
@@ -108,17 +115,24 @@ export class CreateStudentProfileDto {
   @MaxLength(255)
   @ApiPropertyOptional({ example: 'https://github.com/rahim-uddin' })
   githubUrl?: string | null;
+
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsUrl({ require_protocol: true }, { message: 'Portfolio must be a full URL' })
+  @MaxLength(255)
+  @ApiPropertyOptional({ example: 'https://rahim.dev' })
+  portfolioUrl?: string | null;
 }
 
 /** Any subset of profile fields. Optional fields can be cleared with null. */
+/** The AIUB ID is fixed at registration, because it must match the login email. */
 export class UpdateStudentProfileDto extends PartialType(
-  CreateStudentProfileDto,
+  OmitType(CreateStudentProfileDto, ['aiubId'] as const),
 ) {}
 
 /** Fields that must never be set to null on update. */
 export const REQUIRED_PROFILE_FIELDS = [
   'name',
-  'aiubId',
   'mobileNumber',
   'preferredJobType',
   'studyLevel',

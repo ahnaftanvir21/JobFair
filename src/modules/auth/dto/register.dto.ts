@@ -14,6 +14,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
   ValidateNested,
@@ -27,6 +28,7 @@ import {
   CreateReferenceDto,
   CreateStudentProfileDto,
 } from '../../students/dto/index.js';
+import { AIUB_STUDENT_EMAIL } from '../../students/dto/student-profile.dto.js';
 
 /** Login details shared by both registration forms. */
 export class RegisterDto {
@@ -54,6 +56,12 @@ export class RegisterStudentDto extends IntersectionType(
   RegisterDto,
   OmitType(CreateStudentProfileDto, ['address', 'gender'] as const),
 ) {
+  /** AIUB student email only. The ID before @ must equal aiubId. */
+  @Matches(AIUB_STUDENT_EMAIL, {
+    message: 'Use your AIUB student email, like 23-54445-3@student.aiub.edu',
+  })
+  declare email: string;
+
   @Transform(trimValue)
   @IsString()
   @IsNotEmpty()
@@ -145,7 +153,7 @@ export class RegisterEmployerDto extends IntersectionType(
 // Each form gets its own example email in Swagger, so the pre-filled
 // student and employer bodies never collide on the same account.
 ApiProperty({
-  example: 'rahim.uddin@example.com',
+  example: '22-48123-1@student.aiub.edu',
   format: 'email',
   maxLength: 255,
 })(RegisterStudentDto.prototype, 'email');

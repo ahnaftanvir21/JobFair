@@ -74,6 +74,9 @@ export class StudentProfile {
   githubUrl: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
+  portfolioUrl: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
   cvUrl: string | null;
 
   @OneToMany('Education', 'student')

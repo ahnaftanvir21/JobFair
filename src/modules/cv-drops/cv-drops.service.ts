@@ -11,7 +11,6 @@ import {
   type Paginated,
 } from '../../common/dto/pagination.dto.js';
 import { FairService } from '../../common/fair/fair.service.js';
-import { EmployerStatus } from '../../common/enums/index.js';
 import { EmployerProfile } from '../employers/entities/employer-profile.entity.js';
 import { EmployersService } from '../employers/employers.service.js';
 import { StudentsService } from '../students/students.service.js';
@@ -55,10 +54,7 @@ export class CvDropsService {
     const employerId = dto.employerId ?? null;
     if (
       employerId &&
-      !(await this.employerProfiles.existsBy({
-        id: employerId,
-        status: EmployerStatus.APPROVED,
-      }))
+      !(await this.employerProfiles.existsBy({ id: employerId }))
     ) {
       throw new NotFoundException('Company not found');
     }

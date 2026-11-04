@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
-  AllowPendingEmployer,
   CurrentUser,
   Public,
 } from '../../common/decorators/index.js';
@@ -100,7 +99,6 @@ export class AuthController {
   }
 
   @Get('me')
-  @AllowPendingEmployer()
   me(@CurrentUser() user: AuthUser): Promise<AuthUserDto> {
     return this.authService.me(user);
   }

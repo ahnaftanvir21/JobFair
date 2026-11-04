@@ -2,9 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { paginated, type Paginated } from '../../common/dto/pagination.dto.js';
-import { EmployerStatus } from '../../common/enums/index.js';
 import { todayInDhaka } from '../../common/utils/date.util.js';
 import { likePattern } from '../../common/utils/text.util.js';
+import type { AuthUser } from '../../common/interfaces/auth-user.interface.js';
 import { assertNotNull } from '../../common/utils/validation.util.js';
 import { JobPost } from '../jobs/entities/job-post.entity.js';
 import { FileKind } from '../uploads/file-kind.enum.js';
@@ -22,6 +22,27 @@ import { EmployerProfile } from './entities/employer-profile.entity.js';
 
 export type EmployerSummary = EmployerProfile & { openJobCount: number };
 export type EmployerDetail = EmployerProfile & { openJobs: JobPost[] };
+
+/** Company fields anyone may see, without logging in. */
+export const PUBLIC_EMPLOYER_FIELDS = [
+  'id',
+  'companyName',
+  'websiteUrl',
+  'logoUrl',
+  'industryType',
+  'about',
+  'hasOngoingHiring',
+  'boothNumber',
+] as const;
+
+/** Keeps only the public fields (no HR contact or login id). */
+export function toPublicEmployer<T extends Partial<EmployerProfile>>(
+  employer: T,
+): T {
+  const out: Record<string, unknown> = {};
+  for (const key of PUBLIC_EMPLOYER_FIELDS) out[key] = employer[key];
+  return out as T;
+}
 
 @Injectable()
 export class EmployersService {
@@ -49,11 +70,6 @@ export class EmployersService {
     assertNotNull(dto, REQUIRED_EMPLOYER_FIELDS);
     const profile = await this.requireProfileByUser(userId);
     this.profiles.merge(profile, dto);
-    // Editing after a rejection sends the company back to the admin for review.
-    if (profile.status === EmployerStatus.REJECTED) {
-      profile.status = EmployerStatus.PENDING;
-      profile.rejectionReason = null;
-    }
     return this.profiles.save(profile);
   }
 
@@ -82,13 +98,13 @@ export class EmployersService {
     return profile;
   }
 
-  /** Company search for students: "Search company you're looking for". Approved companies only. */
+  /** Company search for students: "Search company you're looking for". */
   async search(
     query: SearchEmployersQueryDto,
+    viewer?: AuthUser,
   ): Promise<Paginated<EmployerSummary>> {
     const qb = this.profiles
       .createQueryBuilder('e')
-      .where('e.status = :approved', { approved: EmployerStatus.APPROVED })
       .orderBy('e.companyName', 'ASC')
       .skip(query.skip)
       .take(query.limit);
@@ -107,18 +123,18 @@ export class EmployersService {
     const [items, total] = await qb.getManyAndCount();
     const counts = await this.openJobCounts(items.map((e) => e.id));
     return paginated(
-      items.map((e) => ({ ...e, openJobCount: counts.get(e.id) ?? 0 })),
+      items.map((e) => ({
+        ...(viewer ? e : toPublicEmployer(e)),
+        openJobCount: counts.get(e.id) ?? 0,
+      })),
       total,
       query,
     );
   }
 
-  /** Company page with its open job posts. Approved companies only. */
-  async getById(id: string): Promise<EmployerDetail> {
-    const profile = await this.profiles.findOneBy({
-      id,
-      status: EmployerStatus.APPROVED,
-    });
+  /** Company page with its open job posts. */
+  async getById(id: string, viewer?: AuthUser): Promise<EmployerDetail> {
+    const profile = await this.profiles.findOneBy({ id });
     if (!profile) throw new NotFoundException('Company not found');
     const openJobs = await this.jobs
       .createQueryBuilder('j')
@@ -128,7 +144,7 @@ export class EmployersService {
       })
       .orderBy('j.deadline', 'ASC')
       .getMany();
-    return { ...profile, openJobs };
+    return { ...(viewer ? profile : toPublicEmployer(profile)), openJobs };
   }
 
   private async openJobCounts(ids: string[]): Promise<Map<string, number>> {

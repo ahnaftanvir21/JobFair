@@ -146,7 +146,7 @@ export class ApplicationsService {
     const application = await this.findFull(id);
     const isApplicant = application.student.userId === user.id;
     const isOwner = application.jobPost.employer.userId === user.id;
-    if (!isApplicant && !isOwner && user.role !== UserRole.ADMIN) {
+    if (!isApplicant && !isOwner) {
       throw new ForbiddenException('You cannot view this application');
     }
     return application;

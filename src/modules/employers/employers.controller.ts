@@ -11,8 +11,8 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
-  AllowPendingEmployer,
   CurrentUser,
+  OptionalAuth,
   Roles,
 } from '../../common/decorators/index.js';
 import { UserRole } from '../../common/enums/index.js';
@@ -32,31 +32,20 @@ export class EmployersController {
 
   @Get('me')
   @Roles(UserRole.EMPLOYER)
-  @AllowPendingEmployer()
-  @ApiOperation({
-    summary: 'My company profile, with its approval status',
-    description:
-      'status is pending, approved or rejected (with rejectionReason). ' +
-      'Until approved, the company can only edit its profile and logo.',
-  })
+  @ApiOperation({ summary: 'My company profile' })
   getMe(@CurrentUser() user: AuthUser) {
     return this.employersService.getOwn(user.id);
   }
 
   @Patch('me')
   @Roles(UserRole.EMPLOYER)
-  @AllowPendingEmployer()
-  @ApiOperation({
-    summary: 'Update my company profile',
-    description: 'After a rejection, saving sends the company back to the admin for review.',
-  })
+  @ApiOperation({ summary: 'Update my company profile, including the booth number' })
   update(@CurrentUser() user: AuthUser, @Body() dto: UpdateEmployerProfileDto) {
     return this.employersService.update(user.id, dto);
   }
 
   @Post('me/logo')
   @Roles(UserRole.EMPLOYER)
-  @AllowPendingEmployer()
   @ApiOperation({ summary: 'Upload company logo (JPG/PNG, max 2 MB)' })
   @ApiFileUpload('Company logo')
   uploadLogo(
@@ -67,16 +56,28 @@ export class EmployersController {
   }
 
   @Get()
-  @AllowPendingEmployer()
-  @ApiOperation({ summary: 'Search approved companies, with their open job count' })
-  search(@Query() query: SearchEmployersQueryDto) {
-    return this.employersService.search(query);
+  @OptionalAuth()
+  @ApiOperation({
+    summary: 'Search companies, with their open job count (no login needed)',
+    description: 'Visitors see public company fields only. Logged-in users also see the HR contact.',
+  })
+  search(
+    @Query() query: SearchEmployersQueryDto,
+    @CurrentUser() user: AuthUser | undefined,
+  ) {
+    return this.employersService.search(query, user);
   }
 
   @Get(':id')
-  @AllowPendingEmployer()
-  @ApiOperation({ summary: 'Approved company page with its open jobs' })
-  getOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.employersService.getById(id);
+  @OptionalAuth()
+  @ApiOperation({
+    summary: 'Company page with its open jobs (no login needed)',
+    description: 'Visitors see public company fields only. Logged-in users also see the HR contact.',
+  })
+  getOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser | undefined,
+  ) {
+    return this.employersService.getById(id, user);
   }
 }

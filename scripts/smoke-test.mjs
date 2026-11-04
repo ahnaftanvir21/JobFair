@@ -1,18 +1,20 @@
 // End-to-end smoke test: walks the whole student and employer flow against a running server.
 // Usage: start the server (npm run start:dev), then run: npm run test:smoke
 // Another URL can be passed: npm run test:smoke -- http://localhost:3000/api
-// It creates accounts ending in .test and deletes them, with all their rows, when done.
+// It creates accounts ending in .test (plus AIUB student emails it remembers) and deletes
+// them, with all their rows, when done.
 // Uploaded test files stay in uploads/, which is git-ignored.
 import 'dotenv/config';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import bcrypt from 'bcryptjs';
 import pg from 'pg';
 
 const BASE = process.argv[2] ?? `http://localhost:${process.env.PORT ?? 3000}/api`;
 const tag = Date.now().toString(36);
 let failures = 0;
 let passes = 0;
+/** Student accounts to delete at the end (their emails cannot end in .test). */
+const studentEmails = [];
 
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
 const PNG = Buffer.concat([
@@ -57,17 +59,6 @@ const today = new Date(Date.now() + 6 * 3600e3).toISOString().slice(0, 10);
 const future = '2026-12-20';
 const past = '2020-01-01';
 
-console.log('\n== Admin account ==');
-const adminEmail = `admin.${tag}@fair.test`;
-{
-  const db = dbClient();
-  await db.connect();
-  await db.query("INSERT INTO users (email, password_hash, role) VALUES ($1, $2, 'admin')", [adminEmail, await bcrypt.hash('adminPass123', 10)]);
-  await db.end();
-}
-const A = (await expectStatus('admin logs in', call('POST', '/auth/login', { json: { email: adminEmail, password: 'adminPass123' } }), 200)).data.accessToken;
-await expectStatus('admin cannot register through the API', call('POST', '/auth/register/employer', { json: { email: `x.${tag}@fair.test`, password: 'secret123', role: 'admin' } }), 400);
-
 console.log('\n== Employer ==');
 const employerBody = {
   email: `hr.${tag}@acme.test`, password: 'secret123',
@@ -80,21 +71,13 @@ check('failed employer registration left no account', (await call('POST', '/auth
 const emp = (await expectStatus('register employer with company profile', call('POST', '/auth/register/employer', { json: employerBody }), 201)).data;
 const E = emp.accessToken;
 const company = emp.profile;
-check('new company is pending', company?.status === 'pending', company?.status);
-const pendingJob = await expectStatus('pending company cannot post a job', call('POST', '/jobs', { token: E, json: {} }), 403);
-check('told it is waiting for approval', /waiting for admin approval/.test(pendingJob.data?.message), pendingJob.data);
-await expectStatus('pending company cannot browse students', call('GET', '/students', { token: E }), 403);
-await expectStatus('pending company can read own profile', call('GET', '/employers/me', { token: E }), 200);
-await expectStatus('pending company can read /auth/me', call('GET', '/auth/me', { token: E }), 200);
-check('pending company hidden from company search', (await call('GET', `/employers?q=${tag}`, { token: E })).data?.total === 0);
-await expectStatus('pending company page hidden', call('GET', `/employers/${company.id}`, { token: E }), 404);
-await expectStatus('employer cannot use admin routes', call('GET', '/admin/stats', { token: E }), 403);
-await expectStatus('visitor cannot use admin routes', call('GET', '/admin/stats'), 401);
-const queue = (await expectStatus('admin sees approval queue', call('GET', `/admin/employers?status=pending&q=${tag}`, { token: A }), 200)).data;
-check('queue shows company with login email', queue.items?.[0]?.id === company.id && queue.items[0].user?.email === employerBody.email, queue.items?.[0]);
-check('queue does not leak password data', !JSON.stringify(queue).includes('password'));
-const approved = (await expectStatus('admin approves company', call('PATCH', `/admin/employers/${company.id}/approve`, { token: A }), 200)).data;
-check('company approved with review time', approved.status === 'approved' && approved.reviewedAt, approved);
+check('company has no approval status', company && !('status' in company) && !('rejectionReason' in company), company);
+await expectStatus('new company can browse students right away', call('GET', '/students', { token: E }), 200);
+await expectStatus('company can read /auth/me', call('GET', '/auth/me', { token: E }), 200);
+check('new company shows in company search', (await call('GET', `/employers?q=${tag}`, { token: E })).data?.total === 1);
+await expectStatus('new company page is public', call('GET', `/employers/${company.id}`), 200);
+const studentMailCompany = await expectStatus('AIUB student email cannot register a company', call('POST', '/auth/register/employer', { json: { ...employerBody, email: '22-12345-1@student.aiub.edu' } }), 400);
+check('told to use a company email', /Student emails cannot register a company/.test(studentMailCompany.data?.message), studentMailCompany.data);
 check('registration returns company profile', company?.companyName === `Acme ${tag}` && company?.hasOngoingHiring === true, company);
 await expectStatus('separate create-company route is gone', call('POST', '/employers/me', { token: E, json: {} }), 404);
 await expectStatus('clear required field', call('PATCH', '/employers/me', { token: E, json: { companyName: null } }), 400);
@@ -126,8 +109,9 @@ check('job2 now has 1 question', edited.questions?.length === 1, edited.question
 
 console.log('\n== Student ==');
 const aiubId = `2${tag.slice(-1).replace(/\D/, '1')}-${String(Date.now()).slice(-5)}-1`;
+const studentEmail = (id) => `${id}@student.aiub.edu`;
 const studentBody = {
-  email: `stu.${tag}@mail.test`, password: 'secret123',
+  email: studentEmail(aiubId), password: 'secret123',
   name: 'Rahim Uddin', aiubId, mobileNumber: '01812345678',
   preferredJobType: 'full_time', studyLevel: 'graduated', preferredIndustryTypes: ['Software Development'],
   seminarParticipation: true, address: 'Kuril, Dhaka', gender: 'male',
@@ -140,20 +124,26 @@ await expectStatus('student register with only email and password', reg({ email:
 await expectStatus('student register without education', reg({ ...studentBody, educations: [] }), 400);
 await expectStatus('student register without address', reg({ ...studentBody, address: undefined }), 400);
 await expectStatus('student register bad AIUB ID', reg({ ...studentBody, aiubId: '123' }), 400);
+const nonAiub = await expectStatus('student register with a non-AIUB email', reg({ ...studentBody, email: `stu.${tag}@mail.test` }), 400);
+check('told to use the AIUB student email', JSON.stringify(nonAiub.data?.message).includes('student.aiub.edu'), nonAiub.data);
+await expectStatus('student register with a staff-style AIUB email', reg({ ...studentBody, email: 'rahim@aiub.edu' }), 400);
+const mismatch = await expectStatus('student email and AIUB ID differ', reg({ ...studentBody, aiubId: aiubId.slice(0, -1) + '9' }), 400);
+check('told the ID must match the email', /must match your student email/.test(mismatch.data?.message), mismatch.data);
 await expectStatus('student register bad education level', reg({ ...studentBody, educations: [{ level: 'phd', institutionName: 'X' }] }), 400);
 await expectStatus('student register unknown nested field', reg({ ...studentBody, educations: [{ level: 'bsc', institutionName: 'X', hacked: true }] }), 400);
 await expectStatus('student register SSC twice', reg({ ...studentBody, educations: [{ level: 'ssc', institutionName: 'A' }, { level: 'ssc', institutionName: 'B' }] }), 409);
 await expectStatus('student register experience ends before it starts', reg({ ...studentBody, experiences: [{ companyName: 'X', industryType: 'IT', jobType: 'internship', designation: 'Intern', startDate: '2025-06-01', endDate: '2025-01-01' }] }), 400);
 check('failed student registrations left no account', (await call('POST', '/auth/login', { json: { email: studentBody.email, password: 'secret123' } })).status === 401);
-const stu = (await expectStatus('register student with full profile', reg(studentBody), 201)).data;
+studentEmails.push(studentBody.email);
+const stu = (await expectStatus('register student with full profile', reg({ ...studentBody, email: studentBody.email.toUpperCase() }), 201)).data;
 const S = stu.accessToken;
 const prof = stu.profile;
 check('only the CV is missing after registration', JSON.stringify(prof?.completeness?.missing) === JSON.stringify(['cv']), prof?.completeness);
-check('profile shows login email', prof?.email === `stu.${tag}@mail.test`, prof?.email);
+check('profile shows login email in lower case', prof?.email === studentBody.email, prof?.email);
 check('education and reference saved with registration', prof?.educations?.length === 1 && prof?.references?.length === 1, prof);
 check('cgpa stored with 2 decimals', prof?.educations?.[0]?.cgpa === '3.75', prof?.educations?.[0]?.cgpa);
-await expectStatus('same AIUB ID with another email', reg({ ...studentBody, email: `stu3.${tag}@mail.test` }), 409);
-check('AIUB ID conflict left no account', (await call('POST', '/auth/login', { json: { email: `stu3.${tag}@mail.test`, password: 'secret123' } })).status === 401);
+await expectStatus('same student registers twice', reg(studentBody), 409);
+await expectStatus('AIUB ID cannot be changed later', call('PATCH', '/students/me', { token: stu.accessToken, json: { aiubId: '20-00000-1' } }), 400);
 await expectStatus('separate create-profile route is gone', call('POST', '/students/me', { token: S, json: {} }), 404);
 await expectStatus('student cannot post jobs', call('POST', '/jobs', { token: S, json: jobBody }), 403);
 await expectStatus('student cannot browse students', call('GET', '/students', { token: S }), 403);
@@ -222,7 +212,7 @@ check('list includes joining date and CV', listed?.joiningDate === 'within_1_wee
 
 console.log('\n== Employer reviews ==');
 const applicants = (await expectStatus('applicants for job', call('GET', `/jobs/${job.id}/applications`, { token: E }), 200)).data;
-check('applicant has answers and email', applicants.items?.[0]?.answers?.length === 2 && applicants.items[0].student?.user?.email === `stu.${tag}@mail.test`, applicants.items?.[0]);
+check('applicant has answers and email', applicants.items?.[0]?.answers?.length === 2 && applicants.items[0].student?.user?.email === studentBody.email, applicants.items?.[0]);
 check('no password hash leaks', !JSON.stringify(applicants).includes('password'));
 const myJobs = (await expectStatus('my jobs with counts', call('GET', '/jobs/mine', { token: E }), 200)).data;
 check('application counts', myJobs.items?.every((j) => j.applicationCount === 1), myJobs.items?.map((j) => j.applicationCount));
@@ -236,7 +226,6 @@ await expectStatus('student detail', call('GET', `/students/${prof.id}`, { token
 console.log('\n== Other employer ==');
 const other = (await expectStatus('register second employer', call('POST', '/auth/register/employer', { json: { email: `hr.${tag}@other.test`, password: 'secret123', companyName: `Other ${tag}`, industryType: 'Banking', about: 'Bank', hrName: 'H', hrEmail: 'hr@other.test', hrMobileNumber: '01712345679', hasOngoingHiring: false } }), 201)).data;
 const O = other.accessToken;
-await expectStatus('admin approves second company', call('PATCH', `/admin/employers/${other.profile.id}/approve`, { token: A }), 200);
 await expectStatus('other cannot see applicants', call('GET', `/jobs/${job.id}/applications`, { token: O }), 403);
 await expectStatus('other cannot read application', call('GET', `/applications/${app1.id}`, { token: O }), 403);
 await expectStatus('other cannot edit job', call('PATCH', `/jobs/${job.id}`, { token: O, json: { positionName: 'Hacked' } }), 403);
@@ -245,7 +234,9 @@ await expectStatus('other cannot close job', call('PATCH', `/jobs/${job.id}/clos
 console.log('\n== Files ==');
 await expectStatus('student reads own CV', call('GET', withCv.cvUrl.replace('/api', ''), { token: S }), 200);
 await expectStatus('employer reads CV', call('GET', app2.cvUrl.replace('/api', ''), { token: O }), 200);
-const stu2 = (await expectStatus('register second student', reg({ ...studentBody, email: `stu2.${tag}@mail.test`, aiubId: aiubId.slice(0, -1) + '2' }), 201)).data;
+const aiubId2 = aiubId.slice(0, -1) + '2';
+studentEmails.push(studentEmail(aiubId2));
+const stu2 = (await expectStatus('register second student', reg({ ...studentBody, email: studentEmail(aiubId2), aiubId: aiubId2 }), 201)).data;
 await expectStatus('other student cannot read CV', call('GET', withCv.cvUrl.replace('/api', ''), { token: stu2.accessToken }), 403);
 await expectStatus('files need login', call('GET', withCv.cvUrl.replace('/api', '')), 401);
 await expectStatus('path traversal rejected', call('GET', '/uploads/cvs/..%2F..%2F.env', { token: E }), 404);
@@ -273,38 +264,10 @@ await expectStatus('student lists criteria', call('GET', '/candidate-criteria', 
 await expectStatus('acme cannot see other matches', call('GET', `/candidate-criteria/${crit.id}/matches`, { token: E }), 403);
 await expectStatus('delete criteria', call('DELETE', `/candidate-criteria/${crit.id}`, { token: O }), 204);
 
-console.log('\n== Admin ==');
-await expectStatus('student cannot use admin routes', call('GET', '/admin/employers', { token: S }), 403);
-const stats = (await expectStatus('admin stats', call('GET', '/admin/stats', { token: A }), 200)).data;
-check('stats count students, companies, jobs and applications', stats.students?.total >= 2 && stats.employers?.approved >= 2 && stats.jobs?.total >= 2 && stats.applications?.total >= 2 && stats.applications?.shortlisted >= 1, stats);
-const adminJobs = (await expectStatus('admin lists all jobs', call('GET', `/admin/jobs?q=${tag}`, { token: A }), 200)).data;
-check('admin jobs show application counts', adminJobs.total === 2 && adminJobs.items.every((j) => j.applicationCount === 1), adminJobs.items?.map((j) => j.applicationCount));
-const adminApps = (await expectStatus('admin lists applications', call('GET', `/admin/applications?employerId=${company.id}&status=shortlisted`, { token: A }), 200)).data;
-check('admin sees the shortlisted application with student and job', adminApps.items?.[0]?.id === app1.id && adminApps.items[0].student?.aiubId === aiubId && adminApps.items[0].jobPost?.positionName === 'Junior Developer', adminApps.items?.[0]);
-await expectStatus('admin opens one application', call('GET', `/applications/${app1.id}`, { token: A }), 200);
-await expectStatus('admin browses students', call('GET', `/students?q=Rahim`, { token: A }), 200);
-await expectStatus('admin reads a CV', call('GET', withCv.cvUrl.replace('/api', ''), { token: A }), 200);
-const adminCompany = (await expectStatus('admin opens a company', call('GET', `/admin/employers/${company.id}`, { token: A }), 200)).data;
-check('company detail lists its jobs', adminCompany.jobs?.length === 2, adminCompany.jobs?.length);
-await expectStatus('reject needs a reason', call('PATCH', `/admin/employers/${company.id}/reject`, { token: A, json: {} }), 400);
-await expectStatus('admin withdraws approval', call('PATCH', `/admin/employers/${company.id}/reject`, { token: A, json: { reason: 'Documents missing' } }), 200);
-const rejectedMsg = await expectStatus('rejected company cannot see applicants', call('GET', `/jobs/${job.id}/applications`, { token: E }), 403);
-check('rejection reason shown', /rejected: Documents missing/.test(rejectedMsg.data?.message), rejectedMsg.data);
-await expectStatus('rejected company cannot read CVs', call('GET', withCv.cvUrl.replace('/api', ''), { token: E }), 403);
-await expectStatus('its job is hidden from students', call('GET', `/jobs/${job.id}`, { token: S }), 404);
-await expectStatus('company still sees its own job', call('GET', `/jobs/${job.id}`, { token: E }), 200);
-check('its jobs leave the public list', (await call('GET', `/jobs?q=${tag}`)).data?.total === 0);
-await expectStatus('nobody can apply to it', call('POST', `/jobs/${job.id}/apply`, { token: stu2.accessToken, json: { joiningDate: 'immediately' } }), 404);
-await expectStatus('CV drop to it refused', call('POST', '/cv-drops', { token: S, json: { employerId: company.id } }), 404);
-const resubmitted = (await expectStatus('rejected company edits profile', call('PATCH', '/employers/me', { token: E, json: { about: 'Updated with documents' } }), 200)).data;
-check('editing sends it back to pending', resubmitted.status === 'pending' && resubmitted.rejectionReason === null, resubmitted);
-await expectStatus('admin approves again', call('PATCH', `/admin/employers/${company.id}/approve`, { token: A }), 200);
-check('jobs visible again', (await call('GET', `/jobs?q=${tag}`)).data?.total === 2);
-await expectStatus('unknown company', call('PATCH', '/admin/employers/00000000-0000-4000-8000-000000000000/approve', { token: A }), 404);
+console.log('\n== No admin ==');
+await expectStatus('admin routes are gone', call('GET', '/admin/stats', { token: E }), 404);
+await expectStatus('company reads a CV', call('GET', withCv.cvUrl.replace('/api', ''), { token: E }), 200);
 const outbox = process.env.MAIL_OUTBOX_DIR || 'mail-outbox';
-await new Promise((r) => setTimeout(r, 200));
-const reviewMails = existsSync(outbox) ? readdirSync(outbox).filter((f) => f.endsWith(`-${employerBody.email}.txt`)) : [];
-check('company emailed on each review', reviewMails.length === 3, reviewMails.length);
 
 console.log('\n== Close job ==');
 const closed = (await expectStatus('close job', call('PATCH', `/jobs/${job2.id}/close`, { token: E }), 200)).data;
@@ -313,6 +276,31 @@ const stu2tok = stu2.accessToken;
 await expectStatus('apply to closed job', call('POST', `/jobs/${job2.id}/apply`, { token: stu2tok, json: { joiningDate: 'immediately' } }), 400);
 const afterClose = (await call('GET', `/jobs?q=${tag}`, { token: S })).data;
 check('closed job hidden from search', afterClose.total === 1, afterClose.total);
+
+console.log('\n== Public companies, booths, reopen, internships ==');
+const visitorCompanies = (await expectStatus('visitor can search companies', call('GET', `/employers?q=${tag}`), 200)).data;
+check('visitor sees both companies', visitorCompanies.total === 2, visitorCompanies.total);
+check('visitor company list has no HR contact or account id', visitorCompanies.items?.every((e) => !('hrEmail' in e) && !('hrMobileNumber' in e) && !('userId' in e) && 'openJobCount' in e), visitorCompanies.items?.[0]);
+const visitorPage = (await expectStatus('visitor can open a company page', call('GET', `/employers/${company.id}`), 200)).data;
+check('visitor company page has open jobs but no HR contact', Array.isArray(visitorPage.openJobs) && !('hrEmail' in visitorPage), visitorPage);
+check('logged-in user still sees HR contact on company page', (await call('GET', `/employers/${company.id}`, { token: S })).data?.hrEmail === 'hr@acme.test');
+await expectStatus('student cannot set a booth', call('PATCH', '/employers/me', { token: S, json: { boothNumber: 'B-1' } }), 403);
+await expectStatus('booth number too long', call('PATCH', '/employers/me', { token: E, json: { boothNumber: 'x'.repeat(21) } }), 400);
+const booth = (await expectStatus('company sets its booth', call('PATCH', '/employers/me', { token: E, json: { boothNumber: ' B-12 ' } }), 200)).data;
+check('booth saved trimmed', booth.boothNumber === 'B-12', booth.boothNumber);
+check('visitor sees the booth', (await call('GET', `/employers/${company.id}`)).data?.boothNumber === 'B-12');
+const cleared = (await expectStatus('company clears its booth', call('PATCH', '/employers/me', { token: E, json: { boothNumber: '' } }), 200)).data;
+check('booth cleared', cleared.boothNumber === null, cleared.boothNumber);
+await expectStatus('other company cannot reopen the job', call('PATCH', `/jobs/${job2.id}/reopen`, { token: O }), 403);
+const reopened = (await expectStatus('reopen closed job', call('PATCH', `/jobs/${job2.id}/reopen`, { token: E }), 200)).data;
+check('reopened job is open', reopened.isOpen === true && reopened.isActive === true, reopened);
+check('reopened job back in search', (await call('GET', `/jobs?q=${tag}`)).data?.total === 2);
+const internJob = (await expectStatus('post an internship job', call('POST', '/jobs', { token: E, json: { ...jobBody, positionName: 'Summer Intern', employmentStatus: 'internship', questions: [] } }), 201)).data;
+const interns = (await call('GET', `/jobs?q=${tag}&employmentStatus=internship`)).data;
+check('internship filter finds only the internship', interns.total === 1 && interns.items?.[0]?.id === internJob.id, interns.total);
+await expectStatus('portfolio must be a full URL', call('PATCH', '/students/me', { token: S, json: { portfolioUrl: 'rahim.dev' } }), 400);
+const withPortfolio = (await expectStatus('add portfolio link', call('PATCH', '/students/me', { token: S, json: { portfolioUrl: 'https://rahim.dev' } }), 200)).data;
+check('portfolio saved', withPortfolio.portfolioUrl === 'https://rahim.dev', withPortfolio.portfolioUrl);
 
 console.log('\n== Forgot password ==');
 async function readResetEmail(email, after) {
@@ -328,7 +316,7 @@ async function readResetEmail(email, after) {
   }
   return { count: 0 };
 }
-const stu2Email = `stu2.${tag}@mail.test`;
+const stu2Email = studentEmail(aiubId2);
 const forgotStart = Date.now();
 const unknown = (await expectStatus('forgot password for unknown email', call('POST', '/auth/forgot-password', { json: { email: `nobody.${tag}@mail.test` } }), 200)).data;
 const known = (await expectStatus('forgot password', call('POST', '/auth/forgot-password', { json: { email: stu2Email.toUpperCase() } }), 200)).data;
@@ -383,8 +371,8 @@ async function cleanup() {
   await client.connect();
   // Profiles, jobs, applications and drops go with ON DELETE CASCADE.
   const { rowCount } = await client.query(
-    "DELETE FROM users WHERE email LIKE '%.' || $1 || '@%.test'",
-    [tag],
+    "DELETE FROM users WHERE email LIKE '%.' || $1 || '@%.test' OR email = ANY($2)",
+    [tag, studentEmails],
   );
   await client.end();
   console.log(`Cleaned up ${rowCount} test accounts.`);

@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, type Transporter } from 'nodemailer';
+import { OPA_SIGNATURE_HTML, OPA_SIGNATURE_TEXT } from './opa-contact.js';
 
 export interface MailMessage {
   to: string;
@@ -36,8 +37,13 @@ export class MailService {
       : null;
   }
 
-  async send(message: MailMessage): Promise<void> {
+  async send(original: MailMessage): Promise<void> {
     const from = this.config.getOrThrow<string>('mail.from');
+    const message: MailMessage = {
+      ...original,
+      text: original.text + OPA_SIGNATURE_TEXT,
+      html: original.html + OPA_SIGNATURE_HTML,
+    };
     if (this.transporter) {
       await this.transporter.sendMail({ from, ...message });
       return;

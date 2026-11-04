@@ -58,6 +58,6 @@ Next: frontend, and a QR code for the live site URL.
 - Sheet 1 header says "Employer Registration" but sits under "Student Apply"; it is treated as student registration.
 - "Salary Expectation" was crossed out on sheet 2, so applications do not store it.
 - Handwritten note "Add CV upload button" is covered by the `cvUrl` on applications.
-- No admin role. Employers can browse all students. Job list needs login.
+- No admin role and no company approval. Employers can browse all students. Jobs and companies are public; applying needs a student login.
 - See docs/PLAN.md for the full agreed plan.
 - Job location dropdown uses the 8 divisions of Bangladesh plus "Anywhere".

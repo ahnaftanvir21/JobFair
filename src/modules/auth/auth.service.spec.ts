@@ -25,7 +25,7 @@ import type { RegisterEmployerDto, RegisterStudentDto } from './dto/index.js';
 const PAST = new Date('2000-01-01');
 
 const studentDto: RegisterStudentDto = {
-  email: 'student@example.com',
+  email: '22-48123-1@student.aiub.edu',
   password: 'secret123',
   name: 'Rahim Uddin',
   aiubId: '22-48123-1',
@@ -186,11 +186,18 @@ describe('AuthService', () => {
     it('names the email when the database reports it as taken', async () => {
       users.create.mockRejectedValue({
         code: '23505',
-        detail: 'Key (email)=(student@example.com) already exists.',
+        detail: 'Key (email)=(22-48123-1@student.aiub.edu) already exists.',
       });
       await expect(makeService().registerStudent(studentDto)).rejects.toThrow(
         'An account with this email already exists',
       );
+    });
+
+    it('rejects an AIUB ID that differs from the student email', async () => {
+      await expect(
+        makeService().registerStudent({ ...studentDto, aiubId: '22-48123-2' }),
+      ).rejects.toThrow('Your AIUB ID must match your student email');
+      expect(users.create).not.toHaveBeenCalled();
     });
 
     it('is blocked when a student cutoff is set and has passed', async () => {
@@ -216,6 +223,16 @@ describe('AuthService', () => {
       expect(profile.companyName).toBe('Acme');
       expect(profile).not.toHaveProperty('password');
       expect(res.profile).toEqual({ id: 'company-1' });
+    });
+
+    it('rejects an AIUB student email', async () => {
+      await expect(
+        makeService().registerEmployer({
+          ...employerDto,
+          email: '22-48123-1@student.aiub.edu',
+        }),
+      ).rejects.toThrow('Student emails cannot register a company');
+      expect(users.create).not.toHaveBeenCalled();
     });
   });
 

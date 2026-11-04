@@ -165,14 +165,14 @@ export class StudentsController {
   // ---------- Browse (employers) ----------
 
   @Get()
-  @Roles(UserRole.EMPLOYER, UserRole.ADMIN)
-  @ApiOperation({ summary: 'Search all students (approved employers and admins)' })
+  @Roles(UserRole.EMPLOYER)
+  @ApiOperation({ summary: 'Search all students (employers)' })
   search(@Query() query: SearchStudentsQueryDto) {
     return this.studentsService.search(query);
   }
 
   @Get(':id')
-  @Roles(UserRole.EMPLOYER, UserRole.ADMIN)
+  @Roles(UserRole.EMPLOYER)
   @ApiOperation({
     summary: 'One student with education, experience and references',
   })

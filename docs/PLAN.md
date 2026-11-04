@@ -1,6 +1,6 @@
 # AIUB Job Fair 2026 — How the System Works
 
-Status: backend built (3 Nov 2026). Scope: **backend API only**. The frontend is built later against this API.
+Status: backend built (3 Nov 2026). Frontend connected (4 Nov 2026): the React app in `../Aiub-Job-Fair-2026` uses this API.
 
 ---
 
@@ -8,14 +8,15 @@ Status: backend built (3 Nov 2026). Scope: **backend API only**. The frontend is
 
 | # | Topic | Decision |
 |---|---|---|
-| 1 | Admin role | Added 4 Nov 2026 (was: none). Admins are fair office staff, created with `npm run admin:create`, never through the API. |
-| 2 | Scope | Backend first. Frontend later. |
-| 3 | Student email | Any email is allowed. |
+| 1 | Admin role | None. Added and then removed again on 4 Nov 2026, together with the admin panel. |
+| 2 | Scope | Backend first, then the React frontend in `../Aiub-Job-Fair-2026` (connected 4 Nov 2026). |
+| 3 | Student email | AIUB student email only, `<AIUB ID>@student.aiub.edu` (4 Nov 2026). The ID before @ must equal the AIUB ID, which can't be changed later. Companies can't use a student email. |
 | 4 | Psychometric / screening questions | Employers write them per job post, with no limit on how many. |
-| 5 | Employer approval | Added 4 Nov 2026 (was: none). New companies are pending until an admin approves them. |
+| 5 | Employer approval | None (removed 4 Nov 2026). A company can post jobs and browse students as soon as it registers. |
 | 6 | Job list | Anyone can browse jobs without logging in (changed 4 Nov 2026). Only logged-in students can apply. |
 | 7 | Student browsing | Employers can browse and search all student profiles. |
 | 8 | Hosting | Not decided yet. Keep config in `.env` so any host works. |
+| 9 | Frontend fit (4 Nov 2026) | Company list and company pages are public like jobs (no HR contact for visitors). Jobs can be internships. Closed jobs can be reopened before their deadline. Companies enter their own booth number in their profile. Students can add a portfolio link. Application statuses stay submitted / shortlisted / rejected / hired. Gender stays male / female. Fair date and venue are fixed text in the frontend, with no open/close switches (no cutoffs). |
 
 ---
 
@@ -24,8 +25,7 @@ Status: backend built (3 Nov 2026). Scope: **backend API only**. The frontend is
 | Role | Can do |
 |---|---|
 | Student | Register, build profile, search companies and jobs, apply with answers to the employer's questions, drop CV, track applications |
-| Employer | Register, build company profile, then after admin approval: post jobs with any number of questions, or post desired-candidate criteria, review applicants, browse all students, shortlist or reject |
-| Admin | See overall numbers; approve or reject companies (with a reason); list all companies, students, jobs and applications; open any application, student profile or file |
+| Employer | Register, build company profile (with booth number), post jobs with any number of questions, or post desired-candidate criteria, review applicants, browse all students, shortlist or reject |
 
 Without login, visitors can register, log in, browse jobs, open job details and see company logos. Everything else needs login.
 
@@ -57,8 +57,7 @@ Register in one request (email + password + full company profile)
        company name, website, industry type, about,
        HR name, HR email, HR mobile, ongoing hiring (yes / no)
   -> Upload logo with the returned token
-  -> Wait for admin approval (status: pending). Meanwhile only the own profile
-     and logo can be edited. Rejected: fix the profile, which sends it back to pending.
+  -> Add the booth number from OPA in the company profile (optional)
   -> "Any ongoing hiring?"
        Yes -> Create job post (repeatable)
                position, location (8 divisions or anywhere), workplace
@@ -104,19 +103,19 @@ Key constraints:
 ## 5. API (prefix /api; everything needs login except register, login, forgot/reset password, job browsing and logos)
 
 Full interactive docs: run the server and open http://localhost:3000/api/docs
+Every endpoint explained with examples: [API.md](API.md)
 
 | Module | Endpoints |
 |---|---|
 | auth | POST /auth/register/student and POST /auth/register/employer (account and full profile together, returns token and profile); POST /auth/login; GET /auth/me; POST /auth/forgot-password (emails a 6-digit code and a reset link); POST /auth/reset-password (email + code, or token from the link, + newPassword) |
 | students (student) | GET, PATCH /students/me; POST /students/me/picture; POST /students/me/cv; POST /students/me/educations, PATCH and DELETE /students/me/educations/:id; same for experiences and references |
 | students (employer) | GET /students?q=&studyLevel=&preferredJobType=&industry=&hasCv=; GET /students/:id |
-| employers | GET, PATCH /employers/me; POST /employers/me/logo; GET /employers?q=&industry=&hiring= (with open job count); GET /employers/:id (with open jobs) |
-| jobs | POST /jobs (with questions); GET /jobs/mine; GET /jobs?q=&location=&workplace=&employmentStatus=&industry=&employerId= (open jobs only, no login needed); GET /jobs/:id (no login needed; visitors do not see HR contact); PATCH /jobs/:id; PATCH /jobs/:id/close |
+| employers | GET, PATCH /employers/me; POST /employers/me/logo; GET /employers?q=&industry=&hiring= (anyone, with open job count); GET /employers/:id (anyone, with open jobs) |
+| jobs | POST /jobs (with questions); GET /jobs/mine; GET /jobs?q=&location=&workplace=&employmentStatus=&industry=&employerId= (open jobs only, no login needed); GET /jobs/:id (no login needed; visitors do not see HR contact); PATCH /jobs/:id; PATCH /jobs/:id/close; PATCH /jobs/:id/reopen |
 | applications | POST /jobs/:id/apply (JSON, or multipart with an optional CV file); GET /applications/mine (student: every application at once with job, company, answers, joining date, CV and status; optional status filter, no paging); GET /jobs/:id/applications; GET /applications/:id; PATCH /applications/:id/status |
 | cv-drops | POST /cv-drops (pool or one company, optional CV file); GET /cv-drops/mine; GET /cv-drops/received?scope=company/pool/all; DELETE /cv-drops/:id |
 | candidate-criteria | POST /candidate-criteria; GET /candidate-criteria/mine; GET /candidate-criteria?employerId=; GET /candidate-criteria/:id; GET /candidate-criteria/:id/matches; PATCH, DELETE /candidate-criteria/:id; POST /candidate-criteria/:id/attachment |
-| admin (admin) | GET /admin/stats; GET /admin/employers?status=&q= (approval queue with status=pending); GET /admin/employers/:id; PATCH /admin/employers/:id/approve; PATCH /admin/employers/:id/reject (reason); GET /admin/jobs?q=&status=open/closed&employerId=; GET /admin/applications?status=&jobId=&employerId=&q=. Admins also use GET /students, GET /students/:id and GET /applications/:id |
-| uploads | GET /uploads/:kind/:filename (logos: anyone; admins: everything; approved employers: everything; pictures and attachments: students; CVs: the owning student) |
+| uploads | GET /uploads/:kind/:filename (logos: anyone; employers: everything; pictures and attachments: students; CVs: the owning student) |
 
 Other list endpoints take page and limit (default 20, max 100) and return { items, total, page, limit }.
 
@@ -137,7 +136,6 @@ Other list endpoints take page and limit (default 20, max 100) and return { item
 14. One application per student per job. Questions on a job cannot change once someone has applied.
 15. Dropping a CV again to the same company, or to the pool, replaces the earlier drop.
 16. SSC, HSC, BSc, MSc 1 and MSc 2 can each be added once. Professional degrees can repeat.
-19. Employer approval: new companies start as pending. Until approved, a company can only view and edit its own profile and logo; every other employer route answers 403 with the reason. Its company page, jobs and candidate criteria are hidden from students and visitors, nobody can apply to its jobs or drop a CV to it, and it cannot open student files. An admin can reject with a reason (also to withdraw an earlier approval); editing the profile after a rejection sends it back to pending. The company is emailed on every approval or rejection.
 17. Registration saves the account and the whole profile in one transaction. If any part is invalid (for example the AIUB ID is taken), nothing is saved.
 10. Salary is "Negotiable" or an amount. Compensation defaults to "As per company policy".
 11. Salary expectation is not collected (struck out on sheet 2).
@@ -153,8 +151,8 @@ Other list endpoints take page and limit (default 20, max 100) and return { item
 | Auth | @nestjs/jwt, passport-jwt, bcryptjs |
 | Email | nodemailer over SMTP (dev: saved to mail-outbox/) |
 | File upload | Multer, local `uploads/` folder |
-| API docs | Swagger at `/api/docs`, used for testing until the frontend exists |
-| Frontend | Later |
+| API docs | Swagger at `/api/docs`, plus `docs/API.md` |
+| Frontend | React 19 + Vite + Tailwind in `../Aiub-Job-Fair-2026`. Dev server on port 5173 forwards `/api` to this backend |
 
 ---
 

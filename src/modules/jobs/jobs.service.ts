@@ -13,7 +13,6 @@ import {
   type Paginated,
 } from '../../common/dto/pagination.dto.js';
 import {
-  EmployerStatus,
   QuestionType,
   UserRole,
 } from '../../common/enums/index.js';
@@ -26,7 +25,10 @@ import {
 import { likePattern } from '../../common/utils/text.util.js';
 import { assertNotNull } from '../../common/utils/validation.util.js';
 import { Application } from '../applications/entities/application.entity.js';
-import { EmployersService } from '../employers/employers.service.js';
+import {
+  EmployersService,
+  toPublicEmployer,
+} from '../employers/employers.service.js';
 import {
   CreateJobDto,
   JobQuestionDto,
@@ -137,6 +139,18 @@ export class JobsService {
     return this.getById(id);
   }
 
+  /** Takes a closed job back to accepting applications. Its deadline must not have passed. */
+  async reopen(userId: string, id: string): Promise<JobView> {
+    const job = await this.requireOwnJob(userId, id);
+    if (!isOnOrBeforeDeadline(job.deadline)) {
+      throw new BadRequestException(
+        'The deadline has passed. Change the deadline to reopen this job.',
+      );
+    }
+    await this.jobs.update(job.id, { isActive: true });
+    return this.getById(id);
+  }
+
   async mine(
     userId: string,
     query: PaginationQueryDto,
@@ -178,7 +192,6 @@ export class JobsService {
       .where('j.isActive = true AND j.deadline >= :today', {
         today: todayInDhaka(),
       })
-      .andWhere('e.status = :approved', { approved: EmployerStatus.APPROVED })
       .orderBy('j.createdAt', 'DESC')
       .skip(query.skip)
       .take(query.limit);
@@ -248,28 +261,8 @@ export class JobsService {
   /** Job details as the person asking may see them. Visitors get public company fields only. */
   async getForViewer(id: string, viewer?: AuthUser): Promise<JobView> {
     const view = await this.getById(id, viewer);
-    // Jobs of companies not approved yet are visible only to that company and admins.
-    if (
-      view.employer.status !== EmployerStatus.APPROVED &&
-      view.employer.userId !== viewer?.id &&
-      viewer?.role !== UserRole.ADMIN
-    ) {
-      throw new NotFoundException('Job not found');
-    }
     if (viewer) return view;
-    const e = view.employer;
-    return {
-      ...view,
-      employer: {
-        id: e.id,
-        companyName: e.companyName,
-        websiteUrl: e.websiteUrl,
-        logoUrl: e.logoUrl,
-        industryType: e.industryType,
-        about: e.about,
-        hasOngoingHiring: e.hasOngoingHiring,
-      } as JobView['employer'],
-    };
+    return { ...view, employer: toPublicEmployer(view.employer) };
   }
 
   // ---------- Used by other modules ----------
@@ -281,7 +274,7 @@ export class JobsService {
       relations: { questions: true, employer: true },
       order: { questions: { order: 'ASC' } },
     });
-    if (!job || job.employer.status !== EmployerStatus.APPROVED) {
+    if (!job) {
       throw new NotFoundException('Job not found');
     }
     if (!this.isOpen(job)) {

@@ -65,6 +65,14 @@ export class CreateEmployerProfileDto {
   @ApiProperty({ example: '01712345678' })
   hrMobileNumber: string;
 
+  /** Booth at the fair, for example "B-12". Blank clears it. */
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsString()
+  @MaxLength(20)
+  @ApiPropertyOptional({ example: 'B-12' })
+  boothNumber?: string | null;
+
   /** "Any ongoing hiring?" Defaults to true. */
   @IsOptional()
   @IsBoolean()

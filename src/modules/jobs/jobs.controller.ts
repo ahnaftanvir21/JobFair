@@ -91,4 +91,14 @@ export class JobsController {
   close(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.jobsService.close(user.id, id);
   }
+
+  @Patch(':id/reopen')
+  @Roles(UserRole.EMPLOYER)
+  @ApiOperation({
+    summary: 'Reopen my closed job post',
+    description: 'Only while its deadline has not passed.',
+  })
+  reopen(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.jobsService.reopen(user.id, id);
+  }
 }
