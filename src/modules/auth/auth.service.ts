@@ -16,6 +16,7 @@ import type {
 } from '../../common/interfaces/auth-user.interface.js';
 import { EmployerProfile } from '../employers/entities/employer-profile.entity.js';
 import { EmployersService } from '../employers/employers.service.js';
+import { EmailVerificationService } from './email-verification.service.js';
 import {
   StudentsService,
   type StudentProfileView,
@@ -50,6 +51,7 @@ export class AuthService {
     private readonly dataSource: DataSource,
     private readonly studentsService: StudentsService,
     private readonly employersService: EmployersService,
+    private readonly emailVerification: EmailVerificationService,
   ) {}
 
   /** Creates the student account and full profile together. */
@@ -126,21 +128,25 @@ export class AuthService {
     createProfile: (manager: EntityManager, userId: string) => Promise<void>,
   ): Promise<User> {
     if (await this.usersService.emailExists(email)) {
-      throw new ConflictException('An account with this email already exists');
+      throw new ConflictException(
+        'An account with this email already exists. Log in, or use Forgot password if it is yours.',
+      );
     }
     const passwordHash = await hash(
       password,
       this.config.getOrThrow<number>('auth.bcryptRounds'),
     );
+    const mustVerify = this.emailVerification.required;
 
+    let user: User;
     try {
-      return await this.dataSource.transaction(async (manager) => {
-        const user = await this.usersService.create(
-          { email, passwordHash, role },
+      user = await this.dataSource.transaction(async (manager) => {
+        const created = await this.usersService.create(
+          { email, passwordHash, role, emailVerified: !mustVerify },
           manager,
         );
-        await createProfile(manager, user.id);
-        return user;
+        await createProfile(manager, created.id);
+        return created;
       });
     } catch (err) {
       // Two requests with the same email or AIUB ID at the same moment.
@@ -154,6 +160,9 @@ export class AuthService {
       }
       throw err;
     }
+    // Send the code once the account is saved.
+    if (mustVerify) await this.emailVerification.start(user);
+    return user;
   }
 
   private async buildResponse(user: User): Promise<AuthResponseDto> {
@@ -170,6 +179,11 @@ export class AuthService {
   }
 
   private toUserDto(user: User): AuthUserDto {
-    return { id: user.id, email: user.email, role: user.role };
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      emailVerified: user.emailVerified,
+    };
   }
 }

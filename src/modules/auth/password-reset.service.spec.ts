@@ -76,6 +76,7 @@ function setup() {
     findByEmail: vi.fn(async (email: string) =>
       email === user.email ? user : null,
     ),
+    markEmailVerified: vi.fn().mockResolvedValue(undefined),
     updatePassword: vi.fn(async (userId: string, hash: string) => {
       passwordUpdates.push({ userId, hash });
     }),

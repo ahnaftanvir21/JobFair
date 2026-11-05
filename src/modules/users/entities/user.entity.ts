@@ -36,6 +36,14 @@ export class User {
   @Column({ name: 'token_version', type: 'int', default: 0, select: false })
   tokenVersion: number;
 
+  /**
+   * Set once the owner proves the email is theirs (code, link or password
+   * reset). New registrations save false explicitly; the column default is
+   * true so accounts made before email checks existed count as verified.
+   */
+  @Column({ name: 'email_verified', type: 'boolean', default: true })
+  emailVerified: boolean;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

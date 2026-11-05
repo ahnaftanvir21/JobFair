@@ -75,6 +75,8 @@ export class PasswordResetService {
       const { affected } = await manager.delete(PasswordReset, { id: reset.id });
       if (!affected) throw new BadRequestException(INVALID_CODE_MESSAGE);
       await this.usersService.updatePassword(reset.userId, passwordHash, manager);
+      // The code reached the inbox, so the email is theirs.
+      await this.usersService.markEmailVerified(reset.userId, manager);
       // Any other open reset requests for this account are no longer needed.
       await manager.delete(PasswordReset, { userId: reset.userId });
     });

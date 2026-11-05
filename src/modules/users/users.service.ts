@@ -49,13 +49,26 @@ export class UsersService {
     });
   }
 
+  async markEmailVerified(
+    userId: string,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager ? manager.getRepository(User) : this.usersRepo;
+    await repo.update(userId, { emailVerified: true });
+  }
+
   async emailExists(email: string): Promise<boolean> {
     return this.usersRepo.existsBy({ email: email.toLowerCase() });
   }
 
   /** Pass a transaction manager to create the user inside a transaction. */
   async create(
-    data: { email: string; passwordHash: string; role: UserRole },
+    data: {
+      email: string;
+      passwordHash: string;
+      role: UserRole;
+      emailVerified: boolean;
+    },
     manager?: EntityManager,
   ): Promise<User> {
     const repo = manager ? manager.getRepository(User) : this.usersRepo;

@@ -1,3 +1,4 @@
+import { EmailVerificationService } from './email-verification.service.js';
 import {
   ConflictException,
   ForbiddenException,
@@ -73,6 +74,7 @@ function makeUser(partial: Partial<User> = {}): User {
     passwordHash: '',
     role: UserRole.STUDENT,
     tokenVersion: 0,
+    emailVerified: true,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...partial,
@@ -96,6 +98,7 @@ describe('AuthService', () => {
     createForUser: ReturnType<typeof vi.fn>;
     getOwn: ReturnType<typeof vi.fn>;
   };
+  let verification: { required: boolean; start: ReturnType<typeof vi.fn> };
 
   function makeService(config = makeConfig()) {
     const dataSource = {
@@ -109,6 +112,7 @@ describe('AuthService', () => {
       dataSource,
       students as unknown as StudentsService,
       employers as unknown as EmployersService,
+      verification as unknown as EmailVerificationService,
     );
   }
 
@@ -116,7 +120,11 @@ describe('AuthService', () => {
     users = {
       emailExists: vi.fn().mockResolvedValue(false),
       create: vi.fn(async (data: Partial<User>) =>
-        makeUser({ email: data.email, role: data.role }),
+        makeUser({
+          email: data.email,
+          role: data.role,
+          emailVerified: data.emailVerified,
+        }),
       ),
       findByEmailWithPassword: vi.fn(),
       findById: vi.fn(),
@@ -129,6 +137,34 @@ describe('AuthService', () => {
       createForUser: vi.fn().mockResolvedValue(undefined),
       getOwn: vi.fn().mockResolvedValue({ id: 'company-1' }),
     };
+    verification = { required: true, start: vi.fn().mockResolvedValue(undefined) };
+  });
+
+  describe('email verification on registration', () => {
+    it('saves new accounts as unverified and emails a code', async () => {
+      const res = await makeService().registerStudent(studentDto);
+      expect(users.create.mock.calls[0][0].emailVerified).toBe(false);
+      expect(res.user.emailVerified).toBe(false);
+      expect(verification.start).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'user-1' }),
+      );
+    });
+
+    it('skips the check when REQUIRE_EMAIL_VERIFICATION is false', async () => {
+      verification.required = false;
+      const res = await makeService().registerStudent(studentDto);
+      expect(users.create.mock.calls[0][0].emailVerified).toBe(true);
+      expect(res.user.emailVerified).toBe(true);
+      expect(verification.start).not.toHaveBeenCalled();
+    });
+
+    it('sends no code when registration fails', async () => {
+      users.emailExists.mockResolvedValue(true);
+      await expect(
+        makeService().registerStudent(studentDto),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(verification.start).not.toHaveBeenCalled();
+    });
   });
 
   describe('registerStudent', () => {
@@ -277,6 +313,7 @@ describe('AuthService', () => {
           id: 'gone',
           email: 'a@b.com',
           role: UserRole.STUDENT,
+          emailVerified: true,
         }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });

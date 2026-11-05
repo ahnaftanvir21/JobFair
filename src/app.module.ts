@@ -3,7 +3,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, type TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { APP_GUARD } from '@nestjs/core';
 import { FairModule } from './common/fair/fair.module.js';
-import { JwtAuthGuard, RolesGuard } from './common/guards/index.js';
+import {
+  EmailVerifiedGuard,
+  JwtAuthGuard,
+  RolesGuard,
+} from './common/guards/index.js';
 import {
   authConfig,
   databaseConfig,
@@ -50,9 +54,10 @@ import { UploadsModule } from './modules/uploads/uploads.module.js';
   controllers: [AppController],
   providers: [
     AppService,
-    // Order matters: authenticate, then check the role.
+    // Order matters: authenticate, check the role, then the email check.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: EmailVerifiedGuard },
   ],
 })
 export class AppModule {}

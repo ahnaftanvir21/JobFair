@@ -5,10 +5,13 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  AllowUnverified,
   CurrentUser,
+  OptionalAuth,
   Public,
 } from '../../common/decorators/index.js';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface.js';
@@ -17,6 +20,7 @@ import {
   type EmployerRegistrationResponse,
   type StudentRegistrationResponse,
 } from './auth.service.js';
+import { EmailVerificationService } from './email-verification.service.js';
 import { PasswordResetService } from './password-reset.service.js';
 import {
   AuthResponseDto,
@@ -27,6 +31,8 @@ import {
   ResetPasswordDto,
   RegisterEmployerDto,
   RegisterStudentDto,
+  VerifyEmailDto,
+  VerifyEmailResponseDto,
 } from './dto/index.js';
 
 @ApiTags('Auth')
@@ -35,6 +41,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly passwordResetService: PasswordResetService,
+    private readonly emailVerification: EmailVerificationService,
   ) {}
 
   @Public()
@@ -43,7 +50,8 @@ export class AuthController {
     summary: 'Register a student with the full profile',
     description:
       'Creates the account, profile, education, experience and references in one go. ' +
-      'Upload the picture and CV afterwards with the returned token.',
+      'Upload the picture and CV afterwards with the returned token. A 6-digit code is ' +
+      'emailed; until it is entered (POST /auth/verify-email) the account can only edit its own profile.',
   })
   registerStudent(
     @Body() dto: RegisterStudentDto,
@@ -55,7 +63,9 @@ export class AuthController {
   @Post('register/employer')
   @ApiOperation({
     summary: 'Register an employer with the full company profile',
-    description: 'Upload the logo afterwards with the returned token.',
+    description:
+      'Upload the logo afterwards with the returned token. A 6-digit code is emailed; until it ' +
+      'is entered (POST /auth/verify-email) the account can only edit its own profile.',
   })
   registerEmployer(
     @Body() dto: RegisterEmployerDto,
@@ -98,6 +108,39 @@ export class AuthController {
     return this.passwordResetService.resetPassword(dto);
   }
 
+  @OptionalAuth()
+  @AllowUnverified()
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Confirm the email with the 6-digit code or the link token',
+    description:
+      'Send code (with the login token) or token (from the email link, no login needed). ' +
+      'The code and link expire in 30 minutes. After 5 wrong codes, ask for a new one.',
+  })
+  async verifyEmail(
+    @Body() dto: VerifyEmailDto,
+    @CurrentUser() user: AuthUser | undefined,
+  ): Promise<VerifyEmailResponseDto> {
+    if (dto.token) return this.emailVerification.verifyToken(dto.token);
+    if (!user) throw new UnauthorizedException('Log in to enter your code');
+    return this.emailVerification.verifyCode(user, dto.code!);
+  }
+
+  @AllowUnverified()
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Email a new verification code',
+    description: 'At most once a minute. The new code replaces the old one.',
+  })
+  resendVerification(
+    @CurrentUser() user: AuthUser,
+  ): Promise<MessageResponseDto> {
+    return this.emailVerification.resend(user);
+  }
+
+  @AllowUnverified()
   @Get('me')
   me(@CurrentUser() user: AuthUser): Promise<AuthUserDto> {
     return this.authService.me(user);

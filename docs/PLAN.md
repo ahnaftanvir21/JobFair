@@ -15,7 +15,7 @@ Status: backend built (3 Nov 2026). Frontend connected (4 Nov 2026): the React a
 | 5 | Employer approval | None (removed 4 Nov 2026). A company can post jobs and browse students as soon as it registers. |
 | 6 | Job list | Anyone can browse jobs without logging in (changed 4 Nov 2026). Only logged-in students can apply. |
 | 7 | Student browsing | Employers can browse and search all student profiles. |
-| 8 | Hosting | Not decided yet. Keep config in `.env` so any host works. |
+| 8 | Hosting | Frontend on Vercel, backend on Render, database and uploads on Supabase (5 Nov 2026). |
 | 9 | Frontend fit (4 Nov 2026) | Company list and company pages are public like jobs (no HR contact for visitors). Jobs can be internships. Closed jobs can be reopened before their deadline. Companies enter their own booth number in their profile. Students can add a portfolio link. Application statuses stay submitted / shortlisted / rejected / hired. Gender stays male / female. Fair date and venue are fixed text in the frontend, with no open/close switches (no cutoffs). |
 
 ---
@@ -140,6 +140,7 @@ Other list endpoints take page and limit (default 20, max 100) and return { item
 10. Salary is "Negotiable" or an amount. Compensation defaults to "As per company policy".
 11. Salary expectation is not collected (struck out on sheet 2).
 18. Forgot password: the email holds a 6-digit code and a link; either one works once and expires in 15 minutes. The answer is the same whether or not the email has an account. At most one email a minute per account; a new request replaces the old code. 5 wrong codes kill the request. A reset logs out every device (old login tokens get 401). Only hashes of the code and link are stored. Without SMTP settings in .env, emails are saved to mail-outbox/ and printed in the server log.
+19. Email verification (5 Nov 2026): registering emails a 6-digit code and a link (30 minutes, 5 wrong tries, one new code a minute). Unverified accounts can log in and edit their own profile only; elsewhere they get 403, and public pages treat them as visitors. Older accounts count as verified; a password reset also verifies. REQUIRE_EMAIL_VERIFICATION=false turns it off.
 
 ---
 

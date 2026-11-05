@@ -9,5 +9,8 @@ export default registerAs('auth', () => {
     jwtSecret,
     jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '1d',
     bcryptRounds: 10,
+    /** New accounts must confirm their email with a code. Off only if set to false. */
+    requireEmailVerification:
+      process.env.REQUIRE_EMAIL_VERIFICATION?.trim().toLowerCase() !== 'false',
   };
 });

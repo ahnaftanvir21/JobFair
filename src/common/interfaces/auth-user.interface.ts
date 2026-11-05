@@ -14,4 +14,6 @@ export interface AuthUser {
   id: string;
   email: string;
   role: UserRole;
+  /** False until the account confirms its email (see EmailVerifiedGuard). */
+  emailVerified: boolean;
 }

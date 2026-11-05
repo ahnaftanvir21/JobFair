@@ -13,7 +13,11 @@ import {
   UploadedFile,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser, Roles } from '../../common/decorators/index.js';
+import {
+  AllowUnverified,
+  CurrentUser,
+  Roles,
+} from '../../common/decorators/index.js';
 import { UserRole } from '../../common/enums/index.js';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface.js';
 import type { UploadedFileLike } from '../uploads/file-storage.service.js';
@@ -39,6 +43,7 @@ export class StudentsController {
 
   @Get('me')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   @ApiOperation({ summary: 'My full profile with completeness check' })
   getMe(@CurrentUser() user: AuthUser) {
     return this.studentsService.getOwnProfile(user.id);
@@ -46,6 +51,7 @@ export class StudentsController {
 
   @Patch('me')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   @ApiOperation({
     summary: 'Update my profile. Send null to clear an optional field.',
   })
@@ -55,6 +61,7 @@ export class StudentsController {
 
   @Post('me/picture')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   @ApiOperation({ summary: 'Upload profile picture (JPG/PNG, max 2 MB)' })
   @ApiFileUpload('Profile picture')
   uploadPicture(
@@ -66,6 +73,7 @@ export class StudentsController {
 
   @Post('me/cv')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   @ApiOperation({ summary: 'Upload my CV (PDF, max 5 MB)' })
   @ApiFileUpload('CV as PDF')
   uploadCv(
@@ -79,12 +87,14 @@ export class StudentsController {
 
   @Post('me/educations')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   addEducation(@CurrentUser() user: AuthUser, @Body() dto: CreateEducationDto) {
     return this.studentsService.addEducation(user.id, dto);
   }
 
   @Patch('me/educations/:id')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   updateEducation(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -95,6 +105,7 @@ export class StudentsController {
 
   @Delete('me/educations/:id')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   @HttpCode(HttpStatus.NO_CONTENT)
   removeEducation(
     @CurrentUser() user: AuthUser,
@@ -107,6 +118,7 @@ export class StudentsController {
 
   @Post('me/experiences')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   addExperience(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateExperienceDto,
@@ -116,6 +128,7 @@ export class StudentsController {
 
   @Patch('me/experiences/:id')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   updateExperience(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -126,6 +139,7 @@ export class StudentsController {
 
   @Delete('me/experiences/:id')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   @HttpCode(HttpStatus.NO_CONTENT)
   removeExperience(
     @CurrentUser() user: AuthUser,
@@ -138,12 +152,14 @@ export class StudentsController {
 
   @Post('me/references')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   addReference(@CurrentUser() user: AuthUser, @Body() dto: CreateReferenceDto) {
     return this.studentsService.addReference(user.id, dto);
   }
 
   @Patch('me/references/:id')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   updateReference(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -154,6 +170,7 @@ export class StudentsController {
 
   @Delete('me/references/:id')
   @Roles(UserRole.STUDENT)
+  @AllowUnverified()
   @HttpCode(HttpStatus.NO_CONTENT)
   removeReference(
     @CurrentUser() user: AuthUser,

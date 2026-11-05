@@ -34,6 +34,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         'Your password was changed. Log in again.',
       );
     }
-    return { id: user.id, email: user.email, role: user.role };
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      emailVerified: user.emailVerified,
+    };
   }
 }

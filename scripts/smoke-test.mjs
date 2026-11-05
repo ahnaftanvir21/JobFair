@@ -15,6 +15,31 @@ let failures = 0;
 let passes = 0;
 /** Student accounts to delete at the end (their emails cannot end in .test). */
 const studentEmails = [];
+// Emails are read from the outbox folder, so run the server with SMTP_HOST blank.
+const outbox = process.env.MAIL_OUTBOX_DIR || 'mail-outbox';
+
+/** Latest email to this address saved at or after `after` (ms), with its code and link token. */
+async function readMail(email, after) {
+  for (let i = 0; i < 40; i++) {
+    const files = existsSync(outbox)
+      ? readdirSync(outbox).filter((f) => f.endsWith(`-${email}.txt`) && Number(f.split('-')[0]) >= after).sort()
+      : [];
+    if (files.length) {
+      const text = readFileSync(join(outbox, files.at(-1)), 'utf8');
+      return { count: files.length, text, code: /code: (\d{6})/.exec(text)?.[1], token: /token=([a-f0-9]{64})/.exec(text)?.[1] };
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return { count: 0 };
+}
+
+/** Marks a test account's email as verified straight in the database. */
+async function markVerified(email) {
+  const db = dbClient();
+  await db.connect();
+  await db.query('UPDATE users SET email_verified = true WHERE email = $1', [email.toLowerCase()]);
+  await db.end();
+}
 
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
 const PNG = Buffer.concat([
@@ -68,11 +93,32 @@ const employerBody = {
 await expectStatus('employer register with only email and password', call('POST', '/auth/register/employer', { json: { email: employerBody.email, password: 'secret123' } }), 400);
 await expectStatus('employer register bad HR mobile', call('POST', '/auth/register/employer', { json: { ...employerBody, hrMobileNumber: '123' } }), 400);
 check('failed employer registration left no account', (await call('POST', '/auth/login', { json: { email: employerBody.email, password: 'secret123' } })).status === 401);
+const empStart = Date.now();
 const emp = (await expectStatus('register employer with company profile', call('POST', '/auth/register/employer', { json: employerBody }), 201)).data;
 const E = emp.accessToken;
 const company = emp.profile;
 check('company has no approval status', company && !('status' in company) && !('rejectionReason' in company), company);
-await expectStatus('new company can browse students right away', call('GET', '/students', { token: E }), 200);
+
+console.log('\n== Email verification ==');
+check('new account starts unverified', emp.user?.emailVerified === false, emp.user);
+const blocked = await expectStatus('unverified company cannot browse students', call('GET', '/students', { token: E }), 403);
+check('told to verify the email', /Verify your email/.test(blocked.data?.message), blocked.data);
+await expectStatus('unverified company cannot post a job', call('POST', '/jobs', { token: E, json: {} }), 403);
+await expectStatus('unverified company can read own profile', call('GET', '/employers/me', { token: E }), 200);
+check('/auth/me shows unverified', (await call('GET', '/auth/me', { token: E })).data?.emailVerified === false);
+const empMail = await readMail(employerBody.email, empStart);
+check('verification email has a 6-digit code and a link', empMail.code && empMail.token && /verify-email\?token=/.test(empMail.text), empMail);
+await expectStatus('ask for another code right away', call('POST', '/auth/resend-verification', { token: E }), 429);
+await expectStatus('verify needs the code or link', call('POST', '/auth/verify-email', { token: E, json: {} }), 400);
+await expectStatus('code without login', call('POST', '/auth/verify-email', { json: { code: empMail.code } }), 401);
+const wrongVerify = empMail.code === '000000' ? '111111' : '000000';
+const wrongV = await expectStatus('wrong verification code', call('POST', '/auth/verify-email', { token: E, json: { code: wrongVerify } }), 400);
+check('told how many tries are left', /4 tries left/.test(wrongV.data?.message), wrongV.data);
+const verified = (await expectStatus('verify with the code', call('POST', '/auth/verify-email', { token: E, json: { code: empMail.code } }), 200)).data;
+check('verify answer shows verified user', verified.user?.emailVerified === true, verified);
+await expectStatus('code works only once', call('POST', '/auth/verify-email', { json: { token: empMail.token } }), 400);
+await expectStatus('resend after verifying', call('POST', '/auth/resend-verification', { token: E }), 400);
+await expectStatus('verified company can browse students', call('GET', '/students', { token: E }), 200);
 await expectStatus('company can read /auth/me', call('GET', '/auth/me', { token: E }), 200);
 check('new company shows in company search', (await call('GET', `/employers?q=${tag}`, { token: E })).data?.total === 1);
 await expectStatus('new company page is public', call('GET', `/employers/${company.id}`), 200);
@@ -135,8 +181,16 @@ await expectStatus('student register SSC twice', reg({ ...studentBody, education
 await expectStatus('student register experience ends before it starts', reg({ ...studentBody, experiences: [{ companyName: 'X', industryType: 'IT', jobType: 'internship', designation: 'Intern', startDate: '2025-06-01', endDate: '2025-01-01' }] }), 400);
 check('failed student registrations left no account', (await call('POST', '/auth/login', { json: { email: studentBody.email, password: 'secret123' } })).status === 401);
 studentEmails.push(studentBody.email);
+const stuStart = Date.now();
 const stu = (await expectStatus('register student with full profile', reg({ ...studentBody, email: studentBody.email.toUpperCase() }), 201)).data;
 const S = stu.accessToken;
+await expectStatus('unverified student cannot drop a CV', call('POST', '/cv-drops', { token: S, json: {} }), 403);
+await expectStatus('unverified student can read own profile', call('GET', '/students/me', { token: S }), 200);
+check('unverified student is a visitor on public pages', (await call('GET', `/employers/${company.id}`, { token: S })).data?.hrEmail === undefined);
+const stuMail = await readMail(studentBody.email, stuStart);
+await expectStatus('bad link token', call('POST', '/auth/verify-email', { json: { token: 'f'.repeat(64) } }), 400);
+await expectStatus('verify with the email link, no login', call('POST', '/auth/verify-email', { json: { token: stuMail.token } }), 200);
+check('student verified after the link', (await call('GET', '/auth/me', { token: S })).data?.emailVerified === true);
 const prof = stu.profile;
 check('only the CV is missing after registration', JSON.stringify(prof?.completeness?.missing) === JSON.stringify(['cv']), prof?.completeness);
 check('profile shows login email in lower case', prof?.email === studentBody.email, prof?.email);
@@ -226,6 +280,7 @@ await expectStatus('student detail', call('GET', `/students/${prof.id}`, { token
 console.log('\n== Other employer ==');
 const other = (await expectStatus('register second employer', call('POST', '/auth/register/employer', { json: { email: `hr.${tag}@other.test`, password: 'secret123', companyName: `Other ${tag}`, industryType: 'Banking', about: 'Bank', hrName: 'H', hrEmail: 'hr@other.test', hrMobileNumber: '01712345679', hasOngoingHiring: false } }), 201)).data;
 const O = other.accessToken;
+await markVerified(`hr.${tag}@other.test`);
 await expectStatus('other cannot see applicants', call('GET', `/jobs/${job.id}/applications`, { token: O }), 403);
 await expectStatus('other cannot read application', call('GET', `/applications/${app1.id}`, { token: O }), 403);
 await expectStatus('other cannot edit job', call('PATCH', `/jobs/${job.id}`, { token: O, json: { positionName: 'Hacked' } }), 403);
@@ -237,6 +292,7 @@ await expectStatus('employer reads CV', call('GET', app2.cvUrl.replace('/api', '
 const aiubId2 = aiubId.slice(0, -1) + '2';
 studentEmails.push(studentEmail(aiubId2));
 const stu2 = (await expectStatus('register second student', reg({ ...studentBody, email: studentEmail(aiubId2), aiubId: aiubId2 }), 201)).data;
+await markVerified(studentEmail(aiubId2));
 await expectStatus('other student cannot read CV', call('GET', withCv.cvUrl.replace('/api', ''), { token: stu2.accessToken }), 403);
 await expectStatus('files need login', call('GET', withCv.cvUrl.replace('/api', '')), 401);
 await expectStatus('path traversal rejected', call('GET', '/uploads/cvs/..%2F..%2F.env', { token: E }), 404);
@@ -267,7 +323,6 @@ await expectStatus('delete criteria', call('DELETE', `/candidate-criteria/${crit
 console.log('\n== No admin ==');
 await expectStatus('admin routes are gone', call('GET', '/admin/stats', { token: E }), 404);
 await expectStatus('company reads a CV', call('GET', withCv.cvUrl.replace('/api', ''), { token: E }), 200);
-const outbox = process.env.MAIL_OUTBOX_DIR || 'mail-outbox';
 
 console.log('\n== Close job ==');
 const closed = (await expectStatus('close job', call('PATCH', `/jobs/${job2.id}/close`, { token: E }), 200)).data;
@@ -303,19 +358,7 @@ const withPortfolio = (await expectStatus('add portfolio link', call('PATCH', '/
 check('portfolio saved', withPortfolio.portfolioUrl === 'https://rahim.dev', withPortfolio.portfolioUrl);
 
 console.log('\n== Forgot password ==');
-async function readResetEmail(email, after) {
-  for (let i = 0; i < 40; i++) {
-    const files = existsSync(outbox)
-      ? readdirSync(outbox).filter((f) => f.endsWith(`-${email}.txt`) && Number(f.split('-')[0]) >= after).sort()
-      : [];
-    if (files.length) {
-      const text = readFileSync(join(outbox, files.at(-1)), 'utf8');
-      return { count: files.length, code: /Your code: (\d{6})/.exec(text)?.[1], token: /token=([a-f0-9]{64})/.exec(text)?.[1] };
-    }
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  return { count: 0 };
-}
+const readResetEmail = readMail;
 const stu2Email = studentEmail(aiubId2);
 const forgotStart = Date.now();
 const unknown = (await expectStatus('forgot password for unknown email', call('POST', '/auth/forgot-password', { json: { email: `nobody.${tag}@mail.test` } }), 200)).data;

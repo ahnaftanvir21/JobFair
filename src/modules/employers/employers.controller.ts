@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  AllowUnverified,
   CurrentUser,
   OptionalAuth,
   Roles,
@@ -32,6 +33,7 @@ export class EmployersController {
 
   @Get('me')
   @Roles(UserRole.EMPLOYER)
+  @AllowUnverified()
   @ApiOperation({ summary: 'My company profile' })
   getMe(@CurrentUser() user: AuthUser) {
     return this.employersService.getOwn(user.id);
@@ -39,6 +41,7 @@ export class EmployersController {
 
   @Patch('me')
   @Roles(UserRole.EMPLOYER)
+  @AllowUnverified()
   @ApiOperation({ summary: 'Update my company profile, including the booth number' })
   update(@CurrentUser() user: AuthUser, @Body() dto: UpdateEmployerProfileDto) {
     return this.employersService.update(user.id, dto);
@@ -46,6 +49,7 @@ export class EmployersController {
 
   @Post('me/logo')
   @Roles(UserRole.EMPLOYER)
+  @AllowUnverified()
   @ApiOperation({ summary: 'Upload company logo (JPG/PNG, max 2 MB)' })
   @ApiFileUpload('Company logo')
   uploadLogo(

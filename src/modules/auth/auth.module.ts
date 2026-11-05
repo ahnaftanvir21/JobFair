@@ -8,13 +8,15 @@ import { StudentsModule } from '../students/students.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
+import { EmailVerificationService } from './email-verification.service.js';
+import { EmailVerification } from './entities/email-verification.entity.js';
 import { PasswordReset } from './entities/password-reset.entity.js';
 import { PasswordResetService } from './password-reset.service.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([PasswordReset]),
+    TypeOrmModule.forFeature([PasswordReset, EmailVerification]),
     UsersModule,
     StudentsModule,
     EmployersModule,
@@ -31,7 +33,12 @@ import { JwtStrategy } from './strategies/jwt.strategy.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordResetService, JwtStrategy],
+  providers: [
+    AuthService,
+    PasswordResetService,
+    EmailVerificationService,
+    JwtStrategy,
+  ],
   exports: [AuthService],
 })
 export class AuthModule {}

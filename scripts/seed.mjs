@@ -461,6 +461,7 @@ async function seed() {
     });
     await call('POST', '/employers/me/logo', { token: res.accessToken, form: { file: makePng(c.color) } });
     if (c.booth) await call('PATCH', '/employers/me', { token: res.accessToken, json: { boothNumber: c.booth } });
+    await sql('UPDATE users SET email_verified = true WHERE id = $1', [res.user.id]);
     companies[c.key] = { token: res.accessToken, id: res.profile.id, ...c };
   }
   console.log(`Companies: ${COMPANIES.length} (5 with booths, 2 without)`);
@@ -479,6 +480,7 @@ async function seed() {
   for (const s of STUDENTS) {
     const { key, picture, noCv, ...profile } = s;
     const res = await call('POST', '/auth/register/student', { json: { email: studentEmail(s.aiubId), password: PASSWORD, ...profile } });
+    await sql('UPDATE users SET email_verified = true WHERE id = $1', [res.user.id]);
     if (!noCv) {
       const cv = makePdf([
         s.name,

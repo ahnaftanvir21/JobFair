@@ -12,7 +12,12 @@ function makeStrategy(user: object | null) {
   return new JwtStrategy(config, users);
 }
 
-const base = { id: 'u1', email: 'a@b.com', role: UserRole.STUDENT };
+const base = {
+  id: 'u1',
+  email: 'a@b.com',
+  role: UserRole.STUDENT,
+  emailVerified: true,
+};
 const payload = (tv?: number) => ({
   sub: 'u1',
   email: 'a@b.com',

@@ -384,6 +384,32 @@ Content-Type: application/json
 
 ---
 
+### POST /auth/verify-email
+**Who:** anyone. New accounts confirm their email here.
+
+Registering sends an email with a 6-digit code and a link (`/verify-email?token=...` on the frontend). Until the email is verified, the account can log in but can only use its own profile (`/students/me...`, `/employers/me...`), `GET /auth/me` and the two verify routes. Everything else answers `403 Verify your email first. Enter the 6-digit code we emailed you.` On public routes (jobs, companies, logos) an unverified account counts as a visitor. Accounts made before this check existed count as verified. Setting a new password with Forgot password also verifies the email.
+
+Send one of:
+- `code`: the 6 digits from the email. Needs the login token (`401` without it).
+- `token`: from the email link. No login needed.
+
+```json
+{ "code": "123456" }
+```
+
+**200 OK** with a code: `{ "message": "Email verified. Your account is ready.", "user": { "id": "...", "email": "...", "role": "student", "emailVerified": true } }`. With a token: only `message`.
+
+**Errors:** `400` for a wrong code (`The code is wrong. 4 tries left.`), an expired code or link, or a used link. The code and link expire in 30 minutes. After 5 wrong codes, ask for a new one.
+
+### POST /auth/resend-verification
+**Who:** logged-in account that is not verified yet. Emails a new code and link, replacing the old ones.
+
+**200 OK:** `{ "message": "We sent a new 6-digit code to ..." }`
+
+**Errors:** `429` if the last code was sent less than a minute ago; `400` if the email is already verified.
+
+To turn the check off (for example while email sending isn't set up), set `REQUIRE_EMAIL_VERIFICATION=false`. New accounts are then verified at once.
+
 ## 4. Students
 
 ### GET /students/me
