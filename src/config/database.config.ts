@@ -9,6 +9,8 @@ export default registerAs('database', (): TypeOrmModuleOptions => ({
   username: process.env.DB_USERNAME ?? 'postgres',
   password: process.env.DB_PASSWORD ?? '',
   database: process.env.DB_NAME ?? 'aiub_job_fair',
+  // Hosted databases such as Supabase need an encrypted connection.
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
   // Entities register themselves via TypeOrmModule.forFeature in each module.
   autoLoadEntities: true,
   // camelCase properties become snake_case columns.
