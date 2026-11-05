@@ -34,6 +34,7 @@ describe('FileStorageService', () => {
     dir = await mkdtemp(join(tmpdir(), 'uploads-'));
     storage = new FileStorageService({
       getOrThrow: () => dir,
+      get: () => undefined,
     } as unknown as ConfigService);
   });
 

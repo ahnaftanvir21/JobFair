@@ -1,4 +1,3 @@
-import { access } from 'node:fs/promises';
 import {
   Controller,
   ForbiddenException,
@@ -50,11 +49,10 @@ export class UploadsController {
       }
     }
 
-    const path = this.storage.absolutePath(fileKind, filename);
-    await access(path).catch(() => {
-      throw new NotFoundException('File not found');
-    });
+    const file = await this.storage.read(fileKind, filename);
+    if (!file) throw new NotFoundException('File not found');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.sendFile(path);
+    res.setHeader('Content-Type', file.contentType);
+    res.send(file.data);
   }
 }

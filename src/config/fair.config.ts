@@ -22,6 +22,15 @@ export default registerAs('fair', () => ({
   employerRegistrationDeadline: optionalDate('EMPLOYER_DEADLINE'),
   uploads: {
     dir: process.env.UPLOAD_DIR ?? 'uploads',
+    /**
+     * Supabase Storage. When the URL and key are set, files go to this private
+     * bucket instead of the local folder, so they survive server restarts.
+     */
+    supabase: {
+      url: process.env.SUPABASE_URL?.trim().replace(/\/$/, '') || null,
+      key: process.env.SUPABASE_SERVICE_KEY?.trim() || null,
+      bucket: process.env.SUPABASE_BUCKET?.trim() || 'uploads',
+    },
     maxCvSizeMb: 5,
     maxImageSizeMb: 2,
   },
