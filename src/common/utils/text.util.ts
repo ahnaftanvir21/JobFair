@@ -9,6 +9,13 @@ export function trimValue({ value }: { value: unknown }): unknown {
 }
 
 /** Trims strings and turns empty ones into null, so optional fields can be cleared. */
+/** Website: empty becomes null; "www.site.com" becomes "https://www.site.com". */
+export function websiteValue({ value }: { value: unknown }): unknown {
+  const v = emptyToNull({ value });
+  if (typeof v !== 'string' || /^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return v;
+  return `https://${v}`;
+}
+
 export function emptyToNull({ value }: { value: unknown }): unknown {
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();

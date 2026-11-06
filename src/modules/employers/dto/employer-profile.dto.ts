@@ -10,7 +10,11 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator';
-import { emptyToNull, trimValue } from '../../../common/utils/text.util.js';
+import {
+  emptyToNull,
+  trimValue,
+  websiteValue,
+} from '../../../common/utils/text.util.js';
 import { BD_MOBILE } from '../../students/dto/student-profile.dto.js';
 
 export class CreateEmployerProfileDto {
@@ -22,10 +26,16 @@ export class CreateEmployerProfileDto {
   companyName: string;
 
   @IsOptional()
-  @Transform(emptyToNull)
-  @IsUrl({ require_protocol: true }, { message: 'Website must be a full URL' })
+  @Transform(websiteValue)
+  @IsUrl(
+    { require_protocol: true, protocols: ['http', 'https'] },
+    { message: 'Enter a valid website, for example www.company.com' },
+  )
   @MaxLength(255)
-  @ApiPropertyOptional({ example: 'https://www.acme-software.com' })
+  @ApiPropertyOptional({
+    example: 'www.acme-software.com',
+    description: 'https:// is added when missing.',
+  })
   websiteUrl?: string | null;
 
   /** e.g. Software, Banking, Telecom */
