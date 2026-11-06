@@ -235,7 +235,9 @@ Content-Type: application/json
 **Who:** anyone. Creates an employer account and the company profile.
 
 - Required: `email`, `password`, `companyName`, `industryType`, `about`, `hrName`, `hrEmail`, `hrMobileNumber`.
-- Optional: `websiteUrl` (full URL), `hasOngoingHiring` (default `true`), `boothNumber` (up to 20 characters).
+- Optional: `websiteUrl` (full URL), `hasOngoingHiring` (default `true`), `boothNumber` (up to 20 characters), `emailToken`.
+
+`emailToken` comes from [POST /auth/signup-code/verify](#post-authsignup-codeverify) for the same email. With it the account starts verified and no code is emailed after registering (the website always does this). A wrong, used or expired token answers `400 Your email check has expired. Go back to step 1 and verify your email again.` and no account is made. Without it the account starts unverified (see [verify-email](#post-authverify-email)), and **a company that doesn't verify within 30 minutes is deleted** with its profile and logo. Companies with an unverified email don't appear in the admin lists or counts.
 
 `email` can't be an AIUB student email (`400 Student emails cannot register a company. Use your company email.`).
 
@@ -387,6 +389,28 @@ Content-Type: application/json
 - `Password must be at least 8 characters`
 
 ---
+
+### POST /auth/signup-code
+**Who:** anyone. Checks an email before the account exists. Company sign-up on the website calls this right after the email and password step.
+
+```json
+{ "email": "hr@acme-software.com" }
+```
+
+**200 OK:** `{ "message": "We sent a 6-digit code to ... It expires in 30 minutes." }`. A new code replaces the old one.
+
+**Errors:** `409` if the email already has an account; `429` if a code was sent to this email less than a minute ago.
+
+### POST /auth/signup-code/verify
+**Who:** anyone.
+
+```json
+{ "email": "hr@acme-software.com", "code": "123456" }
+```
+
+**200 OK:** `{ "message": "Email verified.", "emailToken": "<64 hex characters>" }`. Send `emailToken` when registering with the same email. It works once, for 2 hours.
+
+**Errors:** `400` for a wrong code (`The code is wrong. 4 tries left.`), an expired code or a code already used. After 5 wrong codes, ask for a new one.
 
 ### POST /auth/verify-email
 **Who:** anyone. New accounts confirm their email here.

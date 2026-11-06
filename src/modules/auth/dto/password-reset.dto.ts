@@ -41,7 +41,8 @@ export class ResetPasswordDto {
   @Matches(/^\d{6}$/, { message: 'Code must be the 6 digits from the email' })
   @ApiPropertyOptional({
     example: '123456',
-    description: '6-digit code from the email. Use either email + code, or token.',
+    description:
+      '6-digit code from the email. Use either email + code, or token.',
   })
   code?: string;
 
@@ -49,7 +50,8 @@ export class ResetPasswordDto {
   @IsString()
   @Matches(/^[a-f0-9]{64}$/, { message: 'Reset link is invalid' })
   @ApiPropertyOptional({
-    description: 'The token from the reset link (?token=...). Use instead of email + code.',
+    description:
+      'The token from the reset link (?token=...). Use instead of email + code.',
   })
   token?: string;
 

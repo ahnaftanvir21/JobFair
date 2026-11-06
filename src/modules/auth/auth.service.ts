@@ -18,6 +18,10 @@ import { EmployerProfile } from '../employers/entities/employer-profile.entity.j
 import { EmployersService } from '../employers/employers.service.js';
 import { EmailVerificationService } from './email-verification.service.js';
 import {
+  EMAIL_TAKEN_MESSAGE,
+  SignupEmailService,
+} from './signup-email.service.js';
+import {
   StudentsService,
   type StudentProfileView,
 } from '../students/students.service.js';
@@ -52,6 +56,7 @@ export class AuthService {
     private readonly studentsService: StudentsService,
     private readonly employersService: EmployersService,
     private readonly emailVerification: EmailVerificationService,
+    private readonly signupEmail: SignupEmailService,
   ) {}
 
   /** Creates the student account and full profile together. */
@@ -59,7 +64,7 @@ export class AuthService {
     dto: RegisterStudentDto,
   ): Promise<StudentRegistrationResponse> {
     this.fair.assertStudentWindowOpen('Student registration');
-    const { email, password, ...profile } = dto;
+    const { email, password, emailToken, ...profile } = dto;
     if (email.split('@')[0] !== profile.aiubId) {
       throw new BadRequestException(
         'Your AIUB ID must match your student email (the part before @)',
@@ -68,6 +73,7 @@ export class AuthService {
     const user = await this.createAccount(
       email,
       password,
+      emailToken,
       UserRole.STUDENT,
       (manager, userId) =>
         this.studentsService.createForUser(manager, userId, profile),
@@ -83,7 +89,7 @@ export class AuthService {
     dto: RegisterEmployerDto,
   ): Promise<EmployerRegistrationResponse> {
     this.fair.assertEmployerWindowOpen('Employer registration');
-    const { email, password, ...profile } = dto;
+    const { email, password, emailToken, ...profile } = dto;
     if (email.endsWith('@student.aiub.edu')) {
       throw new BadRequestException(
         'Student emails cannot register a company. Use your company email.',
@@ -92,6 +98,7 @@ export class AuthService {
     const user = await this.createAccount(
       email,
       password,
+      emailToken,
       UserRole.EMPLOYER,
       (manager, userId) =>
         this.employersService.createForUser(manager, userId, profile),
@@ -120,27 +127,30 @@ export class AuthService {
   /**
    * Saves the user and the profile in one transaction.
    * If the profile fails (bad data, AIUB ID taken), the account is not created either.
+   * With an email token (email checked before registering) the account starts verified.
    */
   private async createAccount(
     email: string,
     password: string,
+    emailToken: string | undefined,
     role: UserRole,
     createProfile: (manager: EntityManager, userId: string) => Promise<void>,
   ): Promise<User> {
     if (await this.usersService.emailExists(email)) {
-      throw new ConflictException(
-        'An account with this email already exists. Log in, or use Forgot password if it is yours.',
-      );
+      throw new ConflictException(EMAIL_TAKEN_MESSAGE);
     }
     const passwordHash = await hash(
       password,
       this.config.getOrThrow<number>('auth.bcryptRounds'),
     );
-    const mustVerify = this.emailVerification.required;
+    const mustVerify = this.emailVerification.required && !emailToken;
 
     let user: User;
     try {
       user = await this.dataSource.transaction(async (manager) => {
+        if (emailToken) {
+          await this.signupEmail.consumeToken(email, emailToken, manager);
+        }
         const created = await this.usersService.create(
           { email, passwordHash, role, emailVerified: !mustVerify },
           manager,

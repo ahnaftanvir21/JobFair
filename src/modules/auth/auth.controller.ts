@@ -23,15 +23,19 @@ import {
 } from './auth.service.js';
 import { EmailVerificationService } from './email-verification.service.js';
 import { PasswordResetService } from './password-reset.service.js';
+import { SignupEmailService } from './signup-email.service.js';
 import {
   AuthResponseDto,
   AuthUserDto,
+  CheckSignupCodeDto,
   ForgotPasswordDto,
   LoginDto,
   MessageResponseDto,
   ResetPasswordDto,
   RegisterEmployerDto,
   RegisterStudentDto,
+  SignupCodeDto,
+  SignupCodeResponseDto,
   VerifyEmailDto,
   VerifyEmailResponseDto,
 } from './dto/index.js';
@@ -43,7 +47,37 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly passwordResetService: PasswordResetService,
     private readonly emailVerification: EmailVerificationService,
+    private readonly signupEmail: SignupEmailService,
   ) {}
+
+  @Public()
+  @Post('signup-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Before registering: email a 6-digit code to check the address',
+    description:
+      'Company sign-up uses this right after email and password. At most once a minute per ' +
+      'email; a new code replaces the old one. **409** if the email already has an account.',
+  })
+  sendSignupCode(@Body() dto: SignupCodeDto): Promise<MessageResponseDto> {
+    return this.signupEmail.sendCode(dto.email);
+  }
+
+  @Public()
+  @Post('signup-code/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Before registering: check the code and get an email token',
+    description:
+      'Send the returned emailToken with POST /auth/register/employer (or student) for the same ' +
+      'email; the account then starts verified. The code expires in 30 minutes, the token in 2 hours. ' +
+      'After 5 wrong codes, ask for a new one.',
+  })
+  checkSignupCode(
+    @Body() dto: CheckSignupCodeDto,
+  ): Promise<SignupCodeResponseDto> {
+    return this.signupEmail.checkCode(dto.email, dto.code);
+  }
 
   @Public()
   @Post('register/student')
@@ -65,8 +99,10 @@ export class AuthController {
   @ApiOperation({
     summary: 'Register an employer with the full company profile',
     description:
-      'Upload the logo afterwards with the returned token. A 6-digit code is emailed; until it ' +
-      'is entered (POST /auth/verify-email) the account can only edit its own profile.',
+      'Upload the logo afterwards with the returned token. Send emailToken from ' +
+      'POST /auth/signup-code/verify and the account starts verified. Without it a 6-digit code ' +
+      'is emailed; until it is entered (POST /auth/verify-email) the account can only edit its own ' +
+      'profile, and a company that does not verify within 30 minutes is deleted.',
   })
   registerEmployer(
     @Body() dto: RegisterEmployerDto,

@@ -2,10 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, IsNull, Not, Repository } from 'typeorm';
 import { paginated, type Paginated } from '../../common/dto/pagination.dto.js';
-import {
-  ApplicationStatus,
-  EmployerStatus,
-} from '../../common/enums/index.js';
+import { ApplicationStatus, EmployerStatus } from '../../common/enums/index.js';
 import {
   isOnOrBeforeDeadline,
   todayInDhaka,
@@ -71,6 +68,8 @@ export class AdminService {
       this.students.countBy({ seminarParticipation: true }),
       this.employers
         .createQueryBuilder('e')
+        .innerJoin('e.user', 'u')
+        .where('u.emailVerified = true')
         .select('e.status', 'status')
         .addSelect('COUNT(*)', 'count')
         .groupBy('e.status')
@@ -133,6 +132,8 @@ export class AdminService {
       .createQueryBuilder('e')
       .innerJoin('e.user', 'u')
       .addSelect(['u.id', 'u.email', 'u.createdAt'])
+      // Companies that have not verified their email are not shown until they do.
+      .where('u.emailVerified = true')
       .orderBy(
         'e.createdAt',
         query.status === EmployerStatus.PENDING ? 'ASC' : 'DESC',
@@ -230,15 +231,13 @@ export class AdminService {
       .innerJoin('e.user', 'u')
       .addSelect(['u.id', 'u.email', 'u.createdAt'])
       .where('e.id = :id', { id })
+      .andWhere('u.emailVerified = true')
       .getOne();
     if (!employer) throw new NotFoundException('Company not found');
     return employer;
   }
 
-  private toJobView(
-    job: JobPost,
-    counts: Map<string, number>,
-  ): AdminJobView {
+  private toJobView(job: JobPost, counts: Map<string, number>): AdminJobView {
     return {
       ...job,
       isOpen: job.isActive && isOnOrBeforeDeadline(job.deadline),

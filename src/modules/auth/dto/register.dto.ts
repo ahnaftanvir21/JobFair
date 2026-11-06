@@ -46,6 +46,19 @@ export class RegisterDto {
   @MaxLength(72, { message: 'Password must be at most 72 characters' })
   @ApiProperty({ example: 'secret123' })
   password: string;
+
+  /** From POST /auth/signup-code/verify. With it the account starts verified. */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-f0-9]{64}$/, {
+    message: 'Your email check is invalid. Verify your email again.',
+  })
+  @ApiPropertyOptional({
+    description:
+      'Email token from POST /auth/signup-code/verify for this email. With it the account ' +
+      'starts verified and no code is emailed after registering.',
+  })
+  emailToken?: string;
 }
 
 /**
