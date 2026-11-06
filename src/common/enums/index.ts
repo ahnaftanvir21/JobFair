@@ -1,4 +1,5 @@
 export * from './user-role.enum.js';
+export * from './employer-status.enum.js';
 export * from './gender.enum.js';
 export * from './education-level.enum.js';
 export * from './job-type.enum.js';

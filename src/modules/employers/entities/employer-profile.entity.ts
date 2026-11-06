@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
   type Relation,
 } from 'typeorm';
+import { EmployerStatus } from '../../../common/enums/index.js';
 import { User } from '../../users/entities/user.entity.js';
 
 /** Sheet 2 "Company Profile" plus the flyer's employer registration fields. */
@@ -50,6 +51,27 @@ export class EmployerProfile {
   /** Booth at the fair, for example "B-12". Set by the company. */
   @Column({ type: 'varchar', length: 20, nullable: true })
   boothNumber: string | null;
+
+  /**
+   * Admin review. Only approved companies can post jobs or criteria, see
+   * students and applicants, and appear to students and visitors.
+   * New registrations save pending explicitly; the column default is approved
+   * so companies made before reviews existed stay approved.
+   */
+  @Column({
+    type: 'enum',
+    enum: EmployerStatus,
+    default: EmployerStatus.APPROVED,
+  })
+  status: EmployerStatus;
+
+  /** Why the admin rejected the registration. Cleared when approved. */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  rejectionReason: string | null;
+
+  /** When an admin last approved or rejected the company. */
+  @Column({ type: 'timestamptz', nullable: true })
+  reviewedAt: Date | null;
 
   /** Flyer: "Any ongoing hiring?" Yes means job posts, No means candidate criteria. */
   @Column({ type: 'boolean', default: true })

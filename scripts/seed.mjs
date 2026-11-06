@@ -462,6 +462,7 @@ async function seed() {
     await call('POST', '/employers/me/logo', { token: res.accessToken, form: { file: makePng(c.color) } });
     if (c.booth) await call('PATCH', '/employers/me', { token: res.accessToken, json: { boothNumber: c.booth } });
     await sql('UPDATE users SET email_verified = true WHERE id = $1', [res.user.id]);
+    await sql("UPDATE employer_profiles SET status = 'approved', reviewed_at = now() WHERE id = $1", [res.profile.id]);
     companies[c.key] = { token: res.accessToken, id: res.profile.id, ...c };
   }
   console.log(`Companies: ${COMPANIES.length} (5 with booths, 2 without)`);

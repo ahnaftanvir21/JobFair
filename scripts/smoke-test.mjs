@@ -7,6 +7,7 @@
 import 'dotenv/config';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import bcrypt from 'bcryptjs';
 import pg from 'pg';
 
 const BASE = process.argv[2] ?? `http://localhost:${process.env.PORT ?? 3000}/api`;
@@ -84,6 +85,19 @@ const today = new Date(Date.now() + 6 * 3600e3).toISOString().slice(0, 10);
 const future = '2026-12-20';
 const past = '2020-01-01';
 
+console.log('\n== Admin account ==');
+const adminEmail = `admin.${tag}@fair.test`;
+{
+  const db = dbClient();
+  await db.connect();
+  await db.query("INSERT INTO users (email, password_hash, role, email_verified) VALUES ($1, $2, 'admin', true)", [adminEmail, await bcrypt.hash('adminPass123', 10)]);
+  await db.end();
+}
+const adminLogin = (await expectStatus('admin logs in', call('POST', '/auth/login', { json: { email: adminEmail, password: 'adminPass123' } }), 200)).data;
+const A = adminLogin.accessToken;
+check('login says admin', adminLogin.user?.role === 'admin', adminLogin.user);
+await expectStatus('admin cannot register through the API', call('POST', '/auth/register/employer', { json: { email: `x.${tag}@fair.test`, password: 'secret123', role: 'admin' } }), 400);
+
 console.log('\n== Employer ==');
 const employerBody = {
   email: `hr.${tag}@acme.test`, password: 'secret123',
@@ -97,7 +111,6 @@ const empStart = Date.now();
 const emp = (await expectStatus('register employer with company profile', call('POST', '/auth/register/employer', { json: employerBody }), 201)).data;
 const E = emp.accessToken;
 const company = emp.profile;
-check('company has no approval status', company && !('status' in company) && !('rejectionReason' in company), company);
 
 console.log('\n== Email verification ==');
 check('new account starts unverified', emp.user?.emailVerified === false, emp.user);
@@ -118,7 +131,27 @@ const verified = (await expectStatus('verify with the code', call('POST', '/auth
 check('verify answer shows verified user', verified.user?.emailVerified === true, verified);
 await expectStatus('code works only once', call('POST', '/auth/verify-email', { json: { token: empMail.token } }), 400);
 await expectStatus('resend after verifying', call('POST', '/auth/resend-verification', { token: E }), 400);
-await expectStatus('verified company can browse students', call('GET', '/students', { token: E }), 200);
+
+console.log('\n== Company approval ==');
+check('new company is pending', company?.status === 'pending', company?.status);
+const pendingJob = await expectStatus('pending company cannot post a job', call('POST', '/jobs', { token: E, json: {} }), 403);
+check('told it is waiting for approval', /waiting for admin approval/.test(pendingJob.data?.message), pendingJob.data);
+await expectStatus('pending company cannot browse students', call('GET', '/students', { token: E }), 403);
+await expectStatus('pending company can read own profile', call('GET', '/employers/me', { token: E }), 200);
+await expectStatus('pending company can read /auth/me', call('GET', '/auth/me', { token: E }), 200);
+check('pending company hidden from company search', (await call('GET', `/employers?q=${tag}`)).data?.total === 0);
+await expectStatus('pending company page hidden', call('GET', `/employers/${company.id}`), 404);
+await expectStatus('employer cannot use admin routes', call('GET', '/admin/stats', { token: E }), 403);
+await expectStatus('visitor cannot use admin routes', call('GET', '/admin/stats'), 401);
+const queue = (await expectStatus('admin sees approval queue', call('GET', `/admin/employers?status=pending&q=${tag}`, { token: A }), 200)).data;
+check('queue shows company with login email', queue.items?.[0]?.id === company.id && queue.items[0].user?.email === employerBody.email, queue.items?.[0]);
+check('queue does not leak password data', !JSON.stringify(queue).includes('password'));
+const approveStart = Date.now();
+const approved = (await expectStatus('admin approves company', call('PATCH', `/admin/employers/${company.id}/approve`, { token: A }), 200)).data;
+check('company approved with review time', approved.status === 'approved' && approved.reviewedAt, approved);
+const approveMail = await readMail(employerBody.email, approveStart);
+check('company gets an approval email', /is approved for AIUB Job Fair 2026/.test(approveMail.text ?? ''), approveMail.text?.slice(0, 200));
+await expectStatus('approved company can browse students', call('GET', '/students', { token: E }), 200);
 await expectStatus('company can read /auth/me', call('GET', '/auth/me', { token: E }), 200);
 check('new company shows in company search', (await call('GET', `/employers?q=${tag}`, { token: E })).data?.total === 1);
 await expectStatus('new company page is public', call('GET', `/employers/${company.id}`), 200);
@@ -281,6 +314,7 @@ console.log('\n== Other employer ==');
 const other = (await expectStatus('register second employer', call('POST', '/auth/register/employer', { json: { email: `hr.${tag}@other.test`, password: 'secret123', companyName: `Other ${tag}`, industryType: 'Banking', about: 'Bank', hrName: 'H', hrEmail: 'hr@other.test', hrMobileNumber: '01712345679', hasOngoingHiring: false } }), 201)).data;
 const O = other.accessToken;
 await markVerified(`hr.${tag}@other.test`);
+await expectStatus('admin approves second company', call('PATCH', `/admin/employers/${other.profile.id}/approve`, { token: A }), 200);
 await expectStatus('other cannot see applicants', call('GET', `/jobs/${job.id}/applications`, { token: O }), 403);
 await expectStatus('other cannot read application', call('GET', `/applications/${app1.id}`, { token: O }), 403);
 await expectStatus('other cannot edit job', call('PATCH', `/jobs/${job.id}`, { token: O, json: { positionName: 'Hacked' } }), 403);
@@ -320,8 +354,32 @@ await expectStatus('student lists criteria', call('GET', '/candidate-criteria', 
 await expectStatus('acme cannot see other matches', call('GET', `/candidate-criteria/${crit.id}/matches`, { token: E }), 403);
 await expectStatus('delete criteria', call('DELETE', `/candidate-criteria/${crit.id}`, { token: O }), 204);
 
-console.log('\n== No admin ==');
-await expectStatus('admin routes are gone', call('GET', '/admin/stats', { token: E }), 404);
+console.log('\n== Admin ==');
+await expectStatus('student cannot use admin routes', call('GET', '/admin/employers', { token: S }), 403);
+const stats = (await expectStatus('admin stats', call('GET', '/admin/stats', { token: A }), 200)).data;
+check('stats count students, companies, jobs and applications', stats.students?.total >= 2 && stats.employers?.approved >= 2 && stats.jobs?.total >= 2 && stats.applications?.total >= 2, stats);
+await expectStatus('admin job list is not offered', call('GET', '/admin/jobs', { token: A }), 404);
+await expectStatus('admin cannot browse students', call('GET', '/students', { token: A }), 403);
+const adminCompany = (await expectStatus('admin opens a company', call('GET', `/admin/employers/${company.id}`, { token: A }), 200)).data;
+check('company detail lists its jobs', adminCompany.jobs?.length === 2, adminCompany.jobs?.length);
+await expectStatus('reject needs a reason', call('PATCH', `/admin/employers/${company.id}/reject`, { token: A, json: {} }), 400);
+const rejectStart = Date.now();
+await expectStatus('admin withdraws approval', call('PATCH', `/admin/employers/${company.id}/reject`, { token: A, json: { reason: 'Documents missing' } }), 200);
+const rejectMail = await readMail(employerBody.email, rejectStart);
+check('company gets a rejection email with the reason', /was not approved/.test(rejectMail.text ?? '') && /Reason: Documents missing/.test(rejectMail.text ?? ''), rejectMail.text?.slice(0, 300));
+const rejectedMsg = await expectStatus('rejected company cannot see applicants', call('GET', `/jobs/${job.id}/applications`, { token: E }), 403);
+check('rejection reason shown', /rejected: Documents missing/.test(rejectedMsg.data?.message), rejectedMsg.data);
+await expectStatus('rejected company cannot read CVs', call('GET', withCv.cvUrl.replace('/api', ''), { token: E }), 403);
+await expectStatus('its job is hidden from students', call('GET', `/jobs/${job.id}`, { token: S }), 404);
+await expectStatus('company still sees its own job', call('GET', `/jobs/${job.id}`, { token: E }), 200);
+check('its jobs leave the public list', (await call('GET', `/jobs?q=${tag}`)).data?.total === 0);
+await expectStatus('nobody can apply to it', call('POST', `/jobs/${job.id}/apply`, { token: stu2.accessToken, json: { joiningDate: 'immediately' } }), 404);
+await expectStatus('CV drop to it refused', call('POST', '/cv-drops', { token: S, json: { employerId: company.id } }), 404);
+const resubmitted = (await expectStatus('rejected company edits profile', call('PATCH', '/employers/me', { token: E, json: { about: 'Updated with documents' } }), 200)).data;
+check('editing sends it back to pending', resubmitted.status === 'pending' && resubmitted.rejectionReason === null, resubmitted);
+await expectStatus('admin approves again', call('PATCH', `/admin/employers/${company.id}/approve`, { token: A }), 200);
+check('jobs visible again', (await call('GET', `/jobs?q=${tag}`)).data?.total === 2);
+await expectStatus('unknown company', call('PATCH', '/admin/employers/00000000-0000-4000-8000-000000000000/approve', { token: A }), 404);
 await expectStatus('company reads a CV', call('GET', withCv.cvUrl.replace('/api', ''), { token: E }), 200);
 
 console.log('\n== Close job ==');

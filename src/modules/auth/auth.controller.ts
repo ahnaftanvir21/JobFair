@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  AllowPendingEmployer,
   AllowUnverified,
   CurrentUser,
   OptionalAuth,
@@ -128,6 +129,7 @@ export class AuthController {
   }
 
   @AllowUnverified()
+  @AllowPendingEmployer()
   @Post('resend-verification')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -141,6 +143,7 @@ export class AuthController {
   }
 
   @AllowUnverified()
+  @AllowPendingEmployer()
   @Get('me')
   me(@CurrentUser() user: AuthUser): Promise<AuthUserDto> {
     return this.authService.me(user);

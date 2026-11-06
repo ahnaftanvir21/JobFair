@@ -10,6 +10,9 @@ export default registerAs('auth', () => {
     jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '1d',
     bcryptRounds: 10,
     /** New accounts must confirm their email with a code. Off only if set to false. */
+    /** The admin account is created from these when the server starts. */
+    adminEmail: process.env.ADMIN_EMAIL?.trim().toLowerCase() || null,
+    adminPassword: process.env.ADMIN_PASSWORD || null,
     requireEmailVerification:
       process.env.REQUIRE_EMAIL_VERIFICATION?.trim().toLowerCase() !== 'false',
   };

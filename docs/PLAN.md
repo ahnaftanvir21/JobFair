@@ -8,11 +8,11 @@ Status: backend built (3 Nov 2026). Frontend connected (4 Nov 2026): the React a
 
 | # | Topic | Decision |
 |---|---|---|
-| 1 | Admin role | None. Added and then removed again on 4 Nov 2026, together with the admin panel. |
+| 1 | Admin role | Back on 5 Nov 2026. One admin account from `ADMIN_EMAIL` / `ADMIN_PASSWORD` (created when the server starts). The admin sees overall numbers and reviews companies. |
 | 2 | Scope | Backend first, then the React frontend in `../Aiub-Job-Fair-2026` (connected 4 Nov 2026). |
 | 3 | Student email | AIUB student email only, `<AIUB ID>@student.aiub.edu` (4 Nov 2026). The ID before @ must equal the AIUB ID, which can't be changed later. Companies can't use a student email. |
 | 4 | Psychometric / screening questions | Employers write them per job post, with no limit on how many. |
-| 5 | Employer approval | None (removed 4 Nov 2026). A company can post jobs and browse students as soon as it registers. |
+| 5 | Employer approval | Back on 5 Nov 2026. New companies wait for the admin; they get an email when approved or rejected (with the reason). Companies registered before that count as approved. |
 | 6 | Job list | Anyone can browse jobs without logging in (changed 4 Nov 2026). Only logged-in students can apply. |
 | 7 | Student browsing | Employers can browse and search all student profiles. |
 | 8 | Hosting | Frontend on Vercel, backend on Render, database and uploads on Supabase (5 Nov 2026). |
@@ -25,7 +25,8 @@ Status: backend built (3 Nov 2026). Frontend connected (4 Nov 2026): the React a
 | Role | Can do |
 |---|---|
 | Student | Register, build profile, search companies and jobs, apply with answers to the employer's questions, drop CV, track applications |
-| Employer | Register, build company profile (with booth number), post jobs with any number of questions, or post desired-candidate criteria, review applicants, browse all students, shortlist or reject |
+| Employer | Register, build company profile (with booth number), then after admin approval: post jobs with any number of questions, or post desired-candidate criteria, review applicants, browse all students, shortlist or reject |
+| Admin | See overall numbers; approve or reject companies (with a reason, emailed to them) |
 
 Without login, visitors can register, log in, browse jobs, open job details and see company logos. Everything else needs login.
 

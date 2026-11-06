@@ -15,6 +15,8 @@ import {
   mailConfig,
 } from './config/index.js';
 import { AppController } from './app.controller.js';
+import { AdminModule } from './modules/admin/admin.module.js';
+import { EmployerApprovalGuard } from './modules/employers/employer-approval.guard.js';
 import { AppService } from './app.service.js';
 import { MailModule } from './modules/mail/mail.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
@@ -50,14 +52,16 @@ import { UploadsModule } from './modules/uploads/uploads.module.js';
     CvDropsModule,
     CandidateCriteriaModule,
     UploadsModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
-    // Order matters: authenticate, check the role, then the email check.
+    // Order matters: authenticate, check the role, the email check, then company approval.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: EmailVerifiedGuard },
+    { provide: APP_GUARD, useClass: EmployerApprovalGuard },
   ],
 })
 export class AppModule {}

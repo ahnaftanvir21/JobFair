@@ -15,7 +15,8 @@ The examples were captured from the running API. Long responses are trimmed, and
 8. [CV drops](#8-cv-drops)
 9. [Candidate criteria](#9-candidate-criteria)
 10. [Uploads](#10-uploads-downloading-files)
-11. [Reference](#11-reference): all allowed values, endpoint summary
+11. [Admin](#11-admin)
+12. [Reference](#12-reference): all allowed values, endpoint summary
 
 ---
 
@@ -50,9 +51,12 @@ Each account has one role, and it is inside the token.
 | Role | How the account is made | Can do |
 |---|---|---|
 | `student` | `POST /auth/register/student` | Profile, browse companies and jobs, apply, drop CV |
-| `employer` | `POST /auth/register/employer` | Company profile and booth number, post jobs and criteria, browse students, review applicants. Works right after registering |
+| `employer` | `POST /auth/register/employer` | Company profile and booth number, post jobs and criteria, browse students, review applicants. Only after the admin approves the company |
+| `admin` | From `ADMIN_EMAIL` and `ADMIN_PASSWORD` when the server starts | Overall numbers; approve or reject companies |
 
-There is no admin role and no approval step: a company can use everything as soon as it registers.
+**Company approval.** A new company starts as `pending`. Until the admin approves it, it can only edit its own profile and logo (`GET/PATCH /employers/me`, `POST /employers/me/logo`) and use `GET /auth/me`; other routes answer `403 Your company is waiting for admin approval...`. Pending and rejected companies, and their jobs, are hidden from students and visitors. The company gets an email when it is approved or rejected (with the reason). A rejected company that edits its profile goes back to `pending`. Companies that existed before approvals were added count as approved.
+
+**Admin account.** Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the server settings. The account is created when the server starts; changing `ADMIN_PASSWORD` and restarting changes the password. Admins log in with `POST /auth/login`. Admin accounts can't be registered through the API.
 
 Visitors (no token) can register, log in, reset a password, browse open jobs and companies, open a job or a company page, and load company logos. Visitors never see HR contact details.
 
@@ -1284,13 +1288,33 @@ An `<img src>` or plain link can't send the `Authorization` header. For anything
 
 ---
 
-## 11. Reference
+## 11. Admin
+
+All routes need an admin token.
+
+### GET /admin/stats
+Overall numbers: students (total, with CV, seminar sign-ups), companies by status (`pending`, `approved`, `rejected`), jobs (open, closed), applications by status, CV drops (to the pool, to companies) and candidate criteria.
+
+### GET /admin/employers
+Every company with its login email (`user.email`), `jobCount` and `openJobCount`. Query: `status` (`pending`, `approved`, `rejected`; leave out for all), `q` (company name, login email or HR name), `page`, `limit`. With `status=pending` the oldest come first.
+
+### GET /admin/employers/:id
+One company with its login email, all its jobs (with `applicationCount`), `candidateCriteriaCount` and `cvDropsReceived`.
+
+### PATCH /admin/employers/:id/approve
+Approves the company and emails it. Also works on a rejected company. **200** the company profile.
+
+### PATCH /admin/employers/:id/reject
+Body: `{ "reason": "Website and HR contact could not be verified." }` (required, up to 500 characters). Rejects the company, or withdraws an approval, and emails it the reason. **400** without a reason, **404** unknown company.
+
+## 12. Reference
 
 ### Allowed values
 
 | Field | Values |
 |---|---|
-| `role` | `student`, `employer` |
+| `role` | `student`, `employer`, `admin` |
+| Company `status` | `pending`, `approved`, `rejected` |
 | `gender` | `male`, `female` |
 | `preferredJobType` (student, criteria) | `full_time`, `internship` |
 | `studyLevel` | `ongoing`, `graduated` |

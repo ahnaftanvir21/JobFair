@@ -1,3 +1,4 @@
+import { EmployerStatus } from '../../common/enums/index.js';
 import {
   BadRequestException,
   Injectable,
@@ -54,7 +55,10 @@ export class CvDropsService {
     const employerId = dto.employerId ?? null;
     if (
       employerId &&
-      !(await this.employerProfiles.existsBy({ id: employerId }))
+      !(await this.employerProfiles.existsBy({
+        id: employerId,
+        status: EmployerStatus.APPROVED,
+      }))
     ) {
       throw new NotFoundException('Company not found');
     }

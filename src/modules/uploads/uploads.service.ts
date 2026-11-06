@@ -14,8 +14,15 @@ export class UploadsService {
     kind: FileKind,
     url: string,
   ): Promise<boolean> {
-    // Employers can browse all students, so they can read every file.
-    if (user.role === UserRole.EMPLOYER) return true;
+    // Employers can browse all students, so they can read every file,
+    // but only once an admin has approved the company.
+    if (user.role === UserRole.EMPLOYER) {
+      const rows: unknown[] = await this.dataSource.query(
+        `SELECT 1 FROM employer_profiles WHERE user_id = $1 AND status = 'approved'`,
+        [user.id],
+      );
+      return rows.length > 0;
+    }
 
     // Pictures and criteria attachments are visible to every logged-in student.
     if (kind !== FileKind.CV) return true;

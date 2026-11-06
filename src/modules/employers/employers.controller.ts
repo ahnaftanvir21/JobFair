@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  AllowPendingEmployer,
   AllowUnverified,
   CurrentUser,
   OptionalAuth,
@@ -34,7 +35,13 @@ export class EmployersController {
   @Get('me')
   @Roles(UserRole.EMPLOYER)
   @AllowUnverified()
-  @ApiOperation({ summary: 'My company profile' })
+  @AllowPendingEmployer()
+  @ApiOperation({
+    summary: 'My company profile, with its approval status',
+    description:
+      'status is pending, approved or rejected (with rejectionReason). ' +
+      'Until approved, the company can only edit its profile and logo.',
+  })
   getMe(@CurrentUser() user: AuthUser) {
     return this.employersService.getOwn(user.id);
   }
@@ -42,6 +49,7 @@ export class EmployersController {
   @Patch('me')
   @Roles(UserRole.EMPLOYER)
   @AllowUnverified()
+  @AllowPendingEmployer()
   @ApiOperation({ summary: 'Update my company profile, including the booth number' })
   update(@CurrentUser() user: AuthUser, @Body() dto: UpdateEmployerProfileDto) {
     return this.employersService.update(user.id, dto);
@@ -50,6 +58,7 @@ export class EmployersController {
   @Post('me/logo')
   @Roles(UserRole.EMPLOYER)
   @AllowUnverified()
+  @AllowPendingEmployer()
   @ApiOperation({ summary: 'Upload company logo (JPG/PNG, max 2 MB)' })
   @ApiFileUpload('Company logo')
   uploadLogo(

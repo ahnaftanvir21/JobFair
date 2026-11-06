@@ -1,3 +1,4 @@
+import { EmployerStatus } from '../../common/enums/index.js';
 import {
   ForbiddenException,
   Injectable,
@@ -101,7 +102,10 @@ export class CandidateCriteriaService {
     query: ListCandidateCriteriaQueryDto,
   ): Promise<Paginated<CandidateCriteria>> {
     const [items, total] = await this.criteria.findAndCount({
-      where: query.employerId ? { employerId: query.employerId } : {},
+      where: {
+        ...(query.employerId ? { employerId: query.employerId } : {}),
+        employer: { status: EmployerStatus.APPROVED },
+      },
       relations: { employer: true },
       order: { createdAt: 'DESC' },
       skip: query.skip,
@@ -112,7 +116,7 @@ export class CandidateCriteriaService {
 
   async getById(id: string): Promise<CandidateCriteria> {
     const row = await this.criteria.findOne({
-      where: { id },
+      where: { id, employer: { status: EmployerStatus.APPROVED } },
       relations: { employer: true },
     });
     if (!row) throw new NotFoundException('Candidate criteria not found');

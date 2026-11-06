@@ -13,6 +13,7 @@ import {
   type Paginated,
 } from '../../common/dto/pagination.dto.js';
 import {
+  EmployerStatus,
   QuestionType,
   UserRole,
 } from '../../common/enums/index.js';
@@ -192,6 +193,7 @@ export class JobsService {
       .where('j.isActive = true AND j.deadline >= :today', {
         today: todayInDhaka(),
       })
+      .andWhere('e.status = :approved', { approved: EmployerStatus.APPROVED })
       .orderBy('j.createdAt', 'DESC')
       .skip(query.skip)
       .take(query.limit);
@@ -239,6 +241,14 @@ export class JobsService {
       order: { questions: { order: 'ASC' } },
     });
     if (!job) throw new NotFoundException('Job not found');
+    // Jobs of companies not approved are visible only to that company and admins.
+    if (
+      job.employer.status !== EmployerStatus.APPROVED &&
+      job.employer.userId !== viewer?.id &&
+      viewer?.role !== UserRole.ADMIN
+    ) {
+      throw new NotFoundException('Job not found');
+    }
 
     const view: JobView = { ...job, isOpen: this.isOpen(job) };
     if (viewer?.role === UserRole.STUDENT) {
@@ -274,7 +284,7 @@ export class JobsService {
       relations: { questions: true, employer: true },
       order: { questions: { order: 'ASC' } },
     });
-    if (!job) {
+    if (!job || job.employer.status !== EmployerStatus.APPROVED) {
       throw new NotFoundException('Job not found');
     }
     if (!this.isOpen(job)) {

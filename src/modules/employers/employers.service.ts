@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { paginated, type Paginated } from '../../common/dto/pagination.dto.js';
+import { EmployerStatus } from '../../common/enums/index.js';
 import { todayInDhaka } from '../../common/utils/date.util.js';
 import { likePattern } from '../../common/utils/text.util.js';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface.js';
@@ -60,7 +61,14 @@ export class EmployersService {
     userId: string,
     dto: CreateEmployerProfileDto,
   ): Promise<void> {
-    await manager.save(manager.create(EmployerProfile, { ...dto, userId }));
+    // New companies wait for the admin.
+    await manager.save(
+      manager.create(EmployerProfile, {
+        ...dto,
+        userId,
+        status: EmployerStatus.PENDING,
+      }),
+    );
   }
 
   async update(
@@ -70,6 +78,11 @@ export class EmployersService {
     assertNotNull(dto, REQUIRED_EMPLOYER_FIELDS);
     const profile = await this.requireProfileByUser(userId);
     this.profiles.merge(profile, dto);
+    // Editing after a rejection sends the company back to the admin for review.
+    if (profile.status === EmployerStatus.REJECTED) {
+      profile.status = EmployerStatus.PENDING;
+      profile.rejectionReason = null;
+    }
     return this.profiles.save(profile);
   }
 
@@ -105,6 +118,7 @@ export class EmployersService {
   ): Promise<Paginated<EmployerSummary>> {
     const qb = this.profiles
       .createQueryBuilder('e')
+      .where('e.status = :approved', { approved: EmployerStatus.APPROVED })
       .orderBy('e.companyName', 'ASC')
       .skip(query.skip)
       .take(query.limit);
@@ -134,7 +148,10 @@ export class EmployersService {
 
   /** Company page with its open job posts. */
   async getById(id: string, viewer?: AuthUser): Promise<EmployerDetail> {
-    const profile = await this.profiles.findOneBy({ id });
+    const profile = await this.profiles.findOneBy({
+      id,
+      status: EmployerStatus.APPROVED,
+    });
     if (!profile) throw new NotFoundException('Company not found');
     const openJobs = await this.jobs
       .createQueryBuilder('j')
