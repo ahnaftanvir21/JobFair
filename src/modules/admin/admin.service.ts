@@ -62,6 +62,7 @@ export class AdminService {
       cvDropsTotal,
       cvDropsToPool,
       criteriaTotal,
+      facultyRows,
     ] = await Promise.all([
       this.students.count(),
       this.students.countBy({ cvUrl: Not(IsNull()) }),
@@ -88,6 +89,16 @@ export class AdminService {
       this.cvDrops.count(),
       this.cvDrops.countBy({ employerId: IsNull() }),
       this.criteria.count(),
+      this.students
+        .createQueryBuilder('s')
+        .select('s.faculty', 'faculty')
+        .addSelect('s.program', 'program')
+        .addSelect('s.isAlumni', 'isAlumni')
+        .addSelect('COUNT(*)', 'count')
+        .groupBy('s.faculty')
+        .addGroupBy('s.program')
+        .addGroupBy('s.isAlumni')
+        .getRawMany<FacultyRow>(),
     ]);
 
     const employersByStatus = countByKey(
@@ -103,6 +114,10 @@ export class AdminService {
         total: studentsTotal,
         withCv: studentsWithCv,
         seminarParticipants,
+        alumni: facultyRows
+          .filter((r) => r.isAlumni)
+          .reduce((n, r) => n + Number(r.count), 0),
+        byFaculty: groupByFaculty(facultyRows),
       },
       employers: {
         total: sum(employersByStatus),
@@ -301,6 +316,52 @@ function countByKey<K extends string>(
   const out = Object.fromEntries(keys.map((k) => [k, 0])) as Record<K, number>;
   for (const row of rows) out[row.status] = Number(row.count);
   return out;
+}
+
+type FacultyRow = {
+  faculty: string | null;
+  program: string | null;
+  isAlumni: boolean;
+  count: string;
+};
+
+export interface FacultyCount {
+  /** Null: accounts made before faculty was asked. */
+  faculty: string | null;
+  total: number;
+  alumni: number;
+  current: number;
+  programs: { program: string | null; total: number; alumni: number }[];
+}
+
+/** Registered students per faculty and program, biggest first. */
+function groupByFaculty(rows: FacultyRow[]): FacultyCount[] {
+  const faculties = new Map<string | null, FacultyCount>();
+  for (const row of rows) {
+    const n = Number(row.count);
+    let f = faculties.get(row.faculty);
+    if (!f) {
+      f = { faculty: row.faculty, total: 0, alumni: 0, current: 0, programs: [] };
+      faculties.set(row.faculty, f);
+    }
+    f.total += n;
+    if (row.isAlumni) f.alumni += n;
+    else f.current += n;
+    let p = f.programs.find((x) => x.program === row.program);
+    if (!p) {
+      p = { program: row.program, total: 0, alumni: 0 };
+      f.programs.push(p);
+    }
+    p.total += n;
+    if (row.isAlumni) p.alumni += n;
+  }
+  const byTotal = (a: { total: number }, b: { total: number }) => b.total - a.total;
+  return [...faculties.values()]
+    .map((f) => ({ ...f, programs: f.programs.sort(byTotal) }))
+    .sort((a, b) =>
+      // "Not set" last.
+      a.faculty === null ? 1 : b.faculty === null ? -1 : byTotal(a, b),
+    );
 }
 
 function sum(record: Record<string, number>): number {

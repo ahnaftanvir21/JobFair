@@ -38,6 +38,15 @@ export class CheckAlumniResponseDto {
 
   @ApiProperty({ example: 'AHNAF SADMAN', nullable: true, type: String })
   name: string | null;
+
+  @ApiProperty({ example: 'Bachelor of Business Administration', nullable: true, type: String })
+  program: string | null;
+
+  @ApiProperty({ example: 'Faculty of Business Administration', nullable: true, type: String })
+  faculty: string | null;
+
+  @ApiProperty({ example: '10th Convocation', nullable: true, type: String })
+  convocation: string | null;
 }
 
 export enum AlumniStatusFilter {
@@ -51,7 +60,7 @@ export class AdminAlumniQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ enum: AlumniStatusFilter })
   status?: AlumniStatusFilter;
 
-  /** Matches AIUB ID, name or login email. */
+  /** Matches AIUB ID, name, program or login email. */
   @IsOptional()
   @IsString()
   @MaxLength(100)

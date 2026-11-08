@@ -181,6 +181,8 @@ Content-Type: application/json
   "mobileNumber": "01812345678",
   "preferredJobType": "full_time",
   "studyLevel": "graduated",
+  "program": "Bachelor of Science in Computer Science and Engineering",
+  "faculty": "Faculty of Science and Technology",
   "preferredIndustryTypes": ["Software", "Telecom"],
   "seminarParticipation": true,
   "address": "House 12, Road 5, Kuril, Dhaka",
@@ -222,14 +224,29 @@ Content-Type: application/json
 }
 ```
 
-`completeness.missing` lists what's still needed before the student can apply. Right after registering, that's only `cv`.
+`completeness.missing` lists what's still needed before the student can apply. Right after registering, that's only `cv`. Older accounts without a program or faculty also get `program` and `faculty`.
+
+**Current student list:** if the AIUB ID is on the [current student list](#post-admincurrent-studentsupload), the list's `program` and `faculty` are used (anything sent is ignored) and the profile gets `academicsFromList: true`, so `PATCH /students/me` cannot change them. The web app verifies the AIUB email first ([signup-code](#post-authsignup-code)), then calls [student-list/lookup](#post-authstudent-listlookup) to show the details, and sends the `emailToken` here.
+
+Otherwise `program` (any text, up to 200 characters) and `faculty` are required. `faculty` is one of `Faculty of Arts and Social Sciences`, `Faculty of Business Administration`, `Faculty of Engineering`, `Faculty of Science and Technology`. `educations` must include the AIUB education: a `bsc`, `msc_1` or `msc_2` entry whose `institutionName` is American International University-Bangladesh (or contains "AIUB").
 
 **Errors:**
-- `400`: validation (list of messages), or `End date cannot be before start date`
+- `400`: validation (list of messages), `Add your AIUB education: a BSc or MSc entry at American International University-Bangladesh`, or `End date cannot be before start date`
 - `409`:
   - `An account with this email already exists`
   - `This AIUB ID is already registered`
   - `SSC was added more than once` (SSC, HSC, BSc, MSc 1 and MSc 2 can each appear once; professional degrees can repeat)
+
+### POST /auth/student-list/lookup
+**Who:** anyone with an email token. Current student sign-up: after the AIUB email is verified with [signup-code/verify](#post-authsignup-codeverify), returns what the current student list has for the ID in the email. The token is checked but not used up.
+
+```json
+{ "email": "23-54445-3@student.aiub.edu", "emailToken": "9f2c...64 hex" }
+```
+
+**200 OK:** `{ "found": true, "name": "TAHSIN AHMED", "program": "Bachelor of Science in Computer Science and Engineering", "faculty": "Faculty of Science and Technology" }`. When the ID is not on the list: `found: false` and the rest `null`; the student then picks program and faculty.
+
+**400** if the email is not an AIUB student email, or the token is wrong or expired.
 
 ### POST /auth/alumni/check
 **Who:** anyone. Alumni sign-up, first step: checks an AIUB ID and graduation registration number against the alumni list the fair office uploads ([admin](#post-adminalumniupload)).
@@ -240,7 +257,13 @@ Content-Type: application/json
 
 Registration numbers are compared on letters and digits only, so `22 36987 01` also matches.
 
-**200 OK:** `{ "message": "Details match the alumni list.", "name": "AHNAF SADMAN" }` (`name` is from the list and can be `null`).
+**200 OK:**
+```json
+{ "message": "Details match the alumni list.", "name": "AHNAF SADMAN",
+  "program": "Bachelor of Business Administration", "faculty": "Faculty of Business Administration",
+  "convocation": "10th Convocation" }
+```
+All but `message` come from the list and can be `null`.
 
 **Errors:**
 - `400 These details don't match the AIUB alumni list...`: the ID is not on the list or the number is wrong (same message for both).
@@ -255,6 +278,7 @@ Same body as [register/student](#post-authregisterstudent), with these differenc
 - `emailToken` (required): from [POST /auth/signup-code/verify](#post-authsignup-codeverify) for the same email, so the account starts verified.
 - `registrationNumber` (required): must match `aiubId` on the alumni list.
 - No `studyLevel`: it is always `graduated`, and the profile has `isAlumni: true`. `PATCH /students/me` cannot change it to `ongoing` (`400`).
+- No `program` or `faculty`: they are copied from the alumni list. `PATCH /students/me` cannot change them (`400`), except to fill in one the list did not have. `name` is taken from the body, so the graduate can correct it.
 
 **201 Created:** like register/student.
 
@@ -1346,7 +1370,13 @@ An `<img src>` or plain link can't send the `Authorization` header. For anything
 All routes need an admin token.
 
 ### GET /admin/stats
-Overall numbers: students (total, with CV, seminar sign-ups), companies by status (`pending`, `approved`, `rejected`), jobs (open, closed), applications by status, CV drops (to the pool, to companies) and candidate criteria.
+Overall numbers: students (total, with CV, seminar sign-ups, `alumni`, and `byFaculty`), companies by status (`pending`, `approved`, `rejected`), jobs (open, closed), applications by status, CV drops (to the pool, to companies) and candidate criteria.
+
+`students.byFaculty` counts registered accounts per faculty, biggest first, with `faculty: null` (accounts made before faculty was asked) last:
+```json
+[{ "faculty": "Faculty of Science and Technology", "total": 412, "alumni": 37, "current": 375,
+   "programs": [{ "program": "Bachelor of Science in Computer Science and Engineering", "total": 380, "alumni": 30 }] }]
+```
 
 ### GET /admin/employers
 Every company with its login email (`user.email`), `jobCount` and `openJobCount`. Query: `status` (`pending`, `approved`, `rejected`; leave out for all), `q` (company name, login email or HR name), `page`, `limit`. With `status=pending` the oldest come first.
@@ -1363,8 +1393,10 @@ Body: `{ "reason": "Website and HR contact could not be verified." }` (required,
 ### POST /admin/alumni/upload
 `multipart/form-data` with `file`: the alumni list as `.xlsx` or `.csv` (Google Sheets: File > Download), up to 5 MB. The first sheet with the headings is used; headings can sit below a title row and in any order:
 - `ID` (or `AIUB ID`, `Student ID`): like `16-32398-2`
-- a heading containing `Reg` (like `Grad Reg`): the graduation registration number
-- a heading containing `Name` (optional)
+- a heading containing `Reg` (like `Reg #` or `Grad Reg`): the graduation registration number
+- optional: a heading containing `Name`, `Program` (or `Degree`), `Faculty`, `Convocation`
+
+Faculty names are matched to the four AIUB faculties (so `Faculty of Science & Technology` and `FST` count as `Faculty of Science and Technology`); others are kept as written. Name, program and faculty fill in the graduate's profile at sign-up, and a later upload also updates the program and faculty of alumni who already registered. A sheet without one of these columns keeps what an earlier upload set.
 
 New IDs are added and changed ones updated; IDs not in the file stay, so the list can be uploaded again or in parts. Every row in the sheet is read, including rows hidden by a filter. Registration numbers are checked with a keyed hash and also kept encrypted (AES-256-GCM, key from `JWT_SECRET`) so the admin can see them. **If `JWT_SECRET` changes, upload the list again**, or sign-ups stop matching and the numbers can't be shown.
 
@@ -1377,10 +1409,21 @@ New IDs are added and changed ones updated; IDs not in the file stay, so the lis
 `problems` lists the first 50 skipped rows. **400** for another file type, a sheet without the headings, or no usable rows.
 
 ### GET /admin/alumni
-The list with who has registered. Query: `status` (`registered`, `not_registered`), `q` (AIUB ID, name or login email), `page`, `limit`. Each item: `id`, `aiubId`, `registrationNumber` (as written in the sheet; `null` if it can't be shown, then upload the list again), `name`, `lockedUntil` (set while locked after wrong numbers), and `account` (`email`, `name`, `isAlumni`, `registeredAt`) or `null`. An ID counts as registered when any student account has it, including a current student who signed up with the AIUB email. Also returns `totalInList` and `registered`.
+The list with who has registered. Query: `status` (`registered`, `not_registered`), `q` (AIUB ID, name, program or login email), `page`, `limit`. Each item: `id`, `aiubId`, `registrationNumber` (as written in the sheet; `null` if it can't be shown, then upload the list again), `name`, `program`, `faculty`, `convocation`, `lockedUntil` (set while locked after wrong numbers), and `account` (`email`, `name`, `isAlumni`, `registeredAt`) or `null`. An ID counts as registered when any student account has it, including a current student who signed up with the AIUB email. Also returns `totalInList` and `registered`.
 
 ### DELETE /admin/alumni/:id
 Removes one ID from the list. **204**. An account already made with it is not deleted.
+
+### POST /admin/current-students/upload
+`multipart/form-data` with `file`: the current student list as `.xlsx` or `.csv`, up to 5 MB. Headings: `ID` (required), and `Name`, `Program` (or `Degree`), `Faculty`. No registration number. Faculty names are matched to the four AIUB faculties like the alumni list.
+
+New IDs are added and changed ones updated; IDs not in the file stay. Students who already registered with an ID on the list get its program and faculty, which are then locked (`academicsFromList: true`). **200** `{ added, updated, unchanged, skipped, problems, totalInList }` as for the alumni list. **400** for another file type, a sheet without an `ID` heading, or no usable rows.
+
+### GET /admin/current-students
+The list with who has registered. Query: `status` (`registered`, `not_registered`), `q` (AIUB ID, name, program or login email), `page`, `limit`. Each item: `id`, `aiubId`, `name`, `program`, `faculty`, and `account` (`email`, `name`, `isAlumni`, `registeredAt`) or `null`. Also returns `totalInList` and `registered`.
+
+### DELETE /admin/current-students/:id
+Removes one ID from the list. **204**. An account already made with it keeps its program and faculty.
 
 ## 12. Reference
 
@@ -1414,6 +1457,7 @@ Formats:
 |---|---|---|
 | GET | `/` | anyone |
 | POST | `/auth/register/student` | anyone |
+| POST | `/auth/student-list/lookup` | anyone with an email token |
 | POST | `/auth/alumni/check` | anyone |
 | POST | `/auth/register/alumni` | anyone |
 | POST | `/auth/register/employer` | anyone |

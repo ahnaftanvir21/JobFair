@@ -61,6 +61,25 @@ export class StudentProfile {
   @Column({ type: 'boolean', default: false })
   isAlumni: boolean;
 
+  /**
+   * AIUB program, e.g. "Bachelor of Business Administration". For alumni it
+   * comes from the convocation list and cannot be changed. Null only on
+   * accounts made before this was asked.
+   */
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  program: string | null;
+
+  /** AIUB faculty, one of AIUB_FACULTIES (alumni: as on the list). */
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  faculty: string | null;
+
+  /**
+   * True when program and faculty came from an uploaded list (alumni or
+   * current students). The student cannot change them then.
+   */
+  @Column({ type: 'boolean', default: false })
+  academicsFromList: boolean;
+
   // Step 2: full profile
   @Column({ type: 'varchar', length: 255, nullable: true })
   profilePictureUrl: string | null;

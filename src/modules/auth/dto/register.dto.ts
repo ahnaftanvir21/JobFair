@@ -155,14 +155,53 @@ export class RegisterStudentDto extends StudentRegistrationFields {
     message: 'Use your AIUB student email, like 23-54445-3@student.aiub.edu',
   })
   declare email: string;
+
+  /** Required unless the AIUB ID is on the current student list (then the list's is used). */
+  @IsOptional()
+  @ApiPropertyOptional({
+    example: 'Bachelor of Science in Computer Science and Engineering',
+    description:
+      'Required unless the AIUB ID is on the current student list; then the list value is used.',
+  })
+  declare program: string;
+
+  @IsOptional()
+  @ApiPropertyOptional({
+    example: 'Faculty of Science and Technology',
+    description:
+      'Required unless the AIUB ID is on the current student list; then the list value is used.',
+  })
+  declare faculty: string;
+}
+
+/** Current student sign-up: look up the student list after verifying the AIUB email. */
+export class StudentListLookupDto {
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @Matches(AIUB_STUDENT_EMAIL, {
+    message: 'Use your AIUB student email, like 23-54445-3@student.aiub.edu',
+  })
+  @ApiProperty({ example: '23-54445-3@student.aiub.edu' })
+  email: string;
+
+  @IsString()
+  @Matches(/^[a-f0-9]{64}$/, {
+    message: 'Your email check is invalid. Verify your email again.',
+  })
+  @ApiProperty({ description: 'Email token from POST /auth/signup-code/verify.' })
+  emailToken: string;
 }
 
 /**
  * Alumni registration: any email, proven by the code check, plus the AIUB ID
- * and registration number from the alumni list. Study level is always graduated.
+ * and registration number from the alumni list. Study level is always graduated;
+ * program and faculty come from the list.
  */
 export class RegisterAlumniDto extends OmitType(StudentRegistrationFields, [
   'studyLevel',
+  'program',
+  'faculty',
   'emailToken',
 ] as const) {
   @Transform(trimValue)

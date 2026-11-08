@@ -50,7 +50,7 @@ export const ALUMNI_ALREADY_REGISTERED =
 export interface AlumniImportResult {
   /** New IDs added to the list. */
   added: number;
-  /** IDs already on the list whose registration number or name changed. */
+  /** IDs already on the list whose number, name, program, faculty or convocation changed. */
   updated: number;
   /** IDs already on the list with the same details. */
   unchanged: number;
@@ -68,6 +68,9 @@ export interface AdminAlumniItem {
   /** As written in the uploaded sheet. Null if it cannot be shown (upload the list again). */
   registrationNumber: string | null;
   name: string | null;
+  program: string | null;
+  faculty: string | null;
+  convocation: string | null;
   createdAt: Date;
   updatedAt: Date;
   lockedUntil: Date | null;
@@ -85,6 +88,9 @@ type AlumniRaw = {
   aiubId: string;
   registrationNumberEnc: string | null;
   name: string | null;
+  program: string | null;
+  faculty: string | null;
+  convocation: string | null;
   createdAt: Date;
   updatedAt: Date;
   lockedUntil: Date | null;
@@ -134,7 +140,13 @@ export class AlumniService {
     if (await this.students.existsBy({ aiubId })) {
       throw new ConflictException(ALUMNI_ALREADY_REGISTERED);
     }
-    return { message: 'Details match the alumni list.', name: record.name };
+    return {
+      message: 'Details match the alumni list.',
+      name: record.name,
+      program: record.program,
+      faculty: record.faculty,
+      convocation: record.convocation,
+    };
   }
 
   // ---------- Admin ----------
@@ -182,14 +194,26 @@ export class AlumniService {
               registrationHash,
               registrationNumberEnc: this.encrypt(row.registrationText),
               name: row.name,
+              program: row.program,
+              faculty: row.faculty,
+              convocation: row.convocation,
             });
             continue;
           }
           const numberChanged = old.registrationHash !== registrationHash;
-          const name = row.name ?? old.name;
+          // A sheet without a column keeps what an earlier upload set.
+          const details = {
+            name: row.name ?? old.name,
+            program: row.program ?? old.program,
+            faculty: row.faculty ?? old.faculty,
+            convocation: row.convocation ?? old.convocation,
+          };
+          const detailsChanged = (
+            Object.keys(details) as (keyof typeof details)[]
+          ).some((k) => details[k] !== old[k]);
           // Rows from before numbers were kept get theirs filled in.
           const missingNumber = this.decrypt(old.registrationNumberEnc) === null;
-          if (!numberChanged && !missingNumber && name === old.name) {
+          if (!numberChanged && !missingNumber && !detailsChanged) {
             unchanged++;
             continue;
           }
@@ -201,7 +225,7 @@ export class AlumniService {
               numberChanged || missingNumber
                 ? this.encrypt(row.registrationText)
                 : old.registrationNumberEnc,
-            name,
+            ...details,
             // A corrected number starts with a clean slate.
             failedAttempts: numberChanged ? 0 : old.failedAttempts,
             lockedUntil: numberChanged ? null : old.lockedUntil,
@@ -211,6 +235,19 @@ export class AlumniService {
           await manager.upsert(AlumniRecord, changes, ['aiubId']);
         }
       }
+      // Alumni who already registered get the list's program and faculty.
+      await manager.query(
+        `UPDATE student_profiles s
+            SET program = COALESCE(a.program, s.program),
+                faculty = COALESCE(a.faculty, s.faculty),
+                academics_from_list = true
+           FROM alumni_records a
+          WHERE s.aiub_id = a.aiub_id AND s.is_alumni
+            AND (a.program IS NOT NULL OR a.faculty IS NOT NULL)
+            AND (NOT s.academics_from_list
+              OR s.program IS DISTINCT FROM COALESCE(a.program, s.program)
+              OR s.faculty IS DISTINCT FROM COALESCE(a.faculty, s.faculty))`,
+      );
     });
 
     return {
@@ -233,7 +270,7 @@ export class AlumniService {
       qb.andWhere('s.id IS NULL');
     }
     if (query.q?.trim()) {
-      qb.andWhere('(a.aiubId ILIKE :q OR a.name ILIKE :q OR u.email ILIKE :q)', {
+      qb.andWhere('(a.aiubId ILIKE :q OR a.name ILIKE :q OR a.program ILIKE :q OR u.email ILIKE :q)', {
         q: likePattern(query.q),
       });
     }
@@ -252,6 +289,9 @@ export class AlumniService {
       aiubId: r.aiubId,
       registrationNumber: this.decrypt(r.registrationNumberEnc),
       name: r.name,
+      program: r.program,
+      faculty: r.faculty,
+      convocation: r.convocation,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       lockedUntil:
@@ -286,6 +326,9 @@ export class AlumniService {
       .addSelect('a.aiubId', 'aiubId')
       .addSelect('a.registrationNumberEnc', 'registrationNumberEnc')
       .addSelect('a.name', 'name')
+      .addSelect('a.program', 'program')
+      .addSelect('a.faculty', 'faculty')
+      .addSelect('a.convocation', 'convocation')
       .addSelect('a.createdAt', 'createdAt')
       .addSelect('a.updatedAt', 'updatedAt')
       .addSelect('a.lockedUntil', 'lockedUntil')

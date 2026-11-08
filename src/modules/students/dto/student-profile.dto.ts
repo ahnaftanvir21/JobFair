@@ -11,6 +11,7 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -24,6 +25,7 @@ import {
   StudyLevel,
 } from '../../../common/enums/index.js';
 import { emptyToNull, trimValue } from '../../../common/utils/text.util.js';
+import { AIUB_FACULTIES } from '../aiub-academics.js';
 
 /** Bangladeshi mobile number, with or without +88. */
 export const BD_MOBILE = /^(\+?88)?01[3-9]\d{8}$/;
@@ -60,6 +62,18 @@ export class CreateStudentProfileDto {
   @IsEnum(StudyLevel)
   @ApiProperty({ example: 'graduated' })
   studyLevel: StudyLevel;
+
+  /** AIUB program. Alumni get it from the convocation list instead. */
+  @Transform(trimValue)
+  @IsString()
+  @IsNotEmpty({ message: 'Enter your program' })
+  @MaxLength(200)
+  @ApiProperty({ example: 'Bachelor of Science in Computer Science and Engineering' })
+  program: string;
+
+  @IsIn(AIUB_FACULTIES, { message: 'Choose your AIUB faculty' })
+  @ApiProperty({ enum: AIUB_FACULTIES, example: 'Faculty of Science and Technology' })
+  faculty: string;
 
   /** Preferred company or industry types, e.g. ["Software", "Banking"] */
   @IsArray()
@@ -136,6 +150,8 @@ export const REQUIRED_PROFILE_FIELDS = [
   'mobileNumber',
   'preferredJobType',
   'studyLevel',
+  'program',
+  'faculty',
   'preferredIndustryTypes',
   'seminarParticipation',
 ] as const;

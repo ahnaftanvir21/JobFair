@@ -14,9 +14,56 @@ describe('alumni list parser', () => {
     ]);
     expect(problems).toEqual([]);
     expect(rows).toEqual([
-      { row: 2, aiubId: '01-02425-2', registrationNumber: '223691802', registrationText: '22-36918-02', name: 'MD. ARIFUL HAQUE' },
-      { row: 3, aiubId: '16-32398-2', registrationNumber: '223698701', registrationText: '22-36987-01', name: 'AHNAF SADMAN' },
+      { row: 2, aiubId: '01-02425-2', registrationNumber: '223691802', registrationText: '22-36918-02', name: 'MD. ARIFUL HAQUE', program: null, faculty: null, convocation: null },
+      { row: 3, aiubId: '16-32398-2', registrationNumber: '223698701', registrationText: '22-36987-01', name: 'AHNAF SADMAN', program: null, faculty: null, convocation: null },
     ]);
+  });
+
+  it('reads program, faculty and convocation from the convocation list', () => {
+    const { rows, problems } = parseAlumniSheet([
+      ['Convocation', 'ID', 'Reg #', 'Name', 'Program', 'Faculty'],
+      ['10th Convocation', '04-90464-1', '10-04542-05', 'MUKIT S.M. ABDUL', 'Agriculture Master of Business Administration', 'Faculty of Business Administration'],
+      ['10th Convocation', '00-01435-1', '10-04182-04', 'NURUNNAHAR LABANYA', 'Bachelor of Science in Computer Science', 'Faculty of Science & Technology'],
+    ]);
+    expect(problems).toEqual([]);
+    expect(rows).toEqual([
+      {
+        row: 2,
+        aiubId: '04-90464-1',
+        registrationNumber: '100454205',
+        registrationText: '10-04542-05',
+        name: 'MUKIT S.M. ABDUL',
+        program: 'Agriculture Master of Business Administration',
+        faculty: 'Faculty of Business Administration',
+        convocation: '10th Convocation',
+      },
+      {
+        row: 3,
+        aiubId: '00-01435-1',
+        registrationNumber: '100418204',
+        registrationText: '10-04182-04',
+        name: 'NURUNNAHAR LABANYA',
+        program: 'Bachelor of Science in Computer Science',
+        faculty: 'Faculty of Science and Technology',
+        convocation: '10th Convocation',
+      },
+    ]);
+  });
+
+  it('reads the current student list, which has no Reg # column', () => {
+    const sheet = [
+      ['ID', 'Name', 'Program', 'Faculty'],
+      ['23-54445-3', 'TAHSIN AHMED', 'Bachelor of Science in Computer Science and Engineering', 'FST'],
+      ['23-54445-3', 'SOMEONE ELSE', 'Bachelor of Business Administration', 'FBA'],
+      ['23-54446-1', '', '', ''],
+    ];
+    expect(() => parseAlumniSheet(sheet)).toThrow('Could not find the ID and Reg # columns');
+    const { rows, problems } = parseAlumniSheet(sheet, { registration: false });
+    expect(rows.map((r) => [r.aiubId, r.name, r.faculty])).toEqual([
+      ['23-54445-3', 'TAHSIN AHMED', 'Faculty of Science and Technology'],
+      ['23-54446-1', null, null],
+    ]);
+    expect(problems).toEqual([{ row: 3, message: '23-54445-3 is also on row 2. Row 2 was used.' }]);
   });
 
   it('finds the heading row below a title and in any column order', () => {
@@ -27,7 +74,7 @@ describe('alumni list parser', () => {
       ['KANIJ FATEMA', '22-36925-08', '09-15126-3'],
     ]);
     expect(rows).toEqual([
-      { row: 4, aiubId: '09-15126-3', registrationNumber: '223692508', registrationText: '22-36925-08', name: 'KANIJ FATEMA' },
+      { row: 4, aiubId: '09-15126-3', registrationNumber: '223692508', registrationText: '22-36925-08', name: 'KANIJ FATEMA', program: null, faculty: null, convocation: null },
     ]);
   });
 
@@ -55,7 +102,7 @@ describe('alumni list parser', () => {
 
   it('refuses a sheet without ID and registration headings', () => {
     expect(() => parseAlumniSheet([['Name', 'Phone']])).toThrow(
-      'Could not find the ID and Grad Reg columns',
+      'Could not find the ID and Reg # columns',
     );
   });
 

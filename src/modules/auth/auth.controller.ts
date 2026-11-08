@@ -18,6 +18,7 @@ import {
 import type { AuthUser } from '../../common/interfaces/auth-user.interface.js';
 import {
   AuthService,
+  type CurrentStudentLookup,
   type EmployerRegistrationResponse,
   type StudentRegistrationResponse,
 } from './auth.service.js';
@@ -41,6 +42,7 @@ import {
   RegisterEmployerDto,
   RegisterStudentDto,
   SignupCodeDto,
+  StudentListLookupDto,
   SignupCodeResponseDto,
   VerifyEmailDto,
   VerifyEmailResponseDto,
@@ -99,6 +101,22 @@ export class AuthController {
     @Body() dto: RegisterStudentDto,
   ): Promise<StudentRegistrationResponse> {
     return this.authService.registerStudent(dto);
+  }
+
+  @Public()
+  @Post('student-list/lookup')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Current student sign-up: name, program and faculty from the student list',
+    description:
+      'After POST /auth/signup-code/verify for the AIUB student email. Returns found=false when the ' +
+      'ID is not on the list (the student then picks program and faculty). The email token is not ' +
+      'used up. **400** if the token is wrong or expired.',
+  })
+  lookupStudentList(
+    @Body() dto: StudentListLookupDto,
+  ): Promise<CurrentStudentLookup> {
+    return this.authService.lookupCurrentStudent(dto.email, dto.emailToken);
   }
 
   @Public()

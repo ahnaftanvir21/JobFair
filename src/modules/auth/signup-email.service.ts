@@ -128,6 +128,18 @@ export class SignupEmailService {
     return { message: 'Email verified.', emailToken };
   }
 
+  /** Checks an email token without using it up (for looking up list details before registering). */
+  async assertToken(email: string, emailToken: string): Promise<void> {
+    const row = await this.repo.findOneBy({ email });
+    if (
+      !row?.proofHash ||
+      row.expiresAt <= new Date() ||
+      !sameHash(sha256(emailToken), row.proofHash)
+    ) {
+      throw new BadRequestException(EXPIRED_PROOF_MESSAGE);
+    }
+  }
+
   /** Uses up the email token during registration. Throws if it is wrong or expired. */
   async consumeToken(
     email: string,

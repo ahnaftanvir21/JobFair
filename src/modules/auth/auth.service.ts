@@ -10,6 +10,7 @@ import { compare, hash } from 'bcryptjs';
 import { DataSource, EntityManager } from 'typeorm';
 import { StudyLevel, UserRole } from '../../common/enums/index.js';
 import { AlumniService } from '../alumni/alumni.service.js';
+import { CurrentStudentListService } from '../alumni/current-student-list.service.js';
 import { FairService } from '../../common/fair/fair.service.js';
 import type {
   AuthUser,
@@ -47,6 +48,14 @@ export type EmployerRegistrationResponse = AuthResponseDto & {
   profile: EmployerProfile;
 };
 
+export interface CurrentStudentLookup {
+  /** False: not on the list; the student picks program and faculty. */
+  found: boolean;
+  name: string | null;
+  program: string | null;
+  faculty: string | null;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -60,6 +69,7 @@ export class AuthService {
     private readonly emailVerification: EmailVerificationService,
     private readonly signupEmail: SignupEmailService,
     private readonly alumni: AlumniService,
+    private readonly currentList: CurrentStudentListService,
   ) {}
 
   /** Creates the student account and full profile together. */
@@ -73,13 +83,25 @@ export class AuthService {
         'Your AIUB ID must match your student email (the part before @)',
       );
     }
+    // On the current student list: program and faculty come from the list and are locked.
+    const listed = await this.currentList.find(profile.aiubId);
+    const fromList = !!(listed && (listed.program || listed.faculty));
+    const program = (fromList && listed?.program) || profile.program?.trim() || null;
+    const faculty = (fromList && listed?.faculty) || profile.faculty || null;
+    if (!program) throw new BadRequestException('Enter your program');
+    if (!faculty) throw new BadRequestException('Choose your AIUB faculty');
     const user = await this.createAccount(
       email,
       password,
       emailToken,
       UserRole.STUDENT,
       (manager, userId) =>
-        this.studentsService.createForUser(manager, userId, profile),
+        this.studentsService.createForUser(manager, userId, {
+          ...profile,
+          program,
+          faculty,
+          academicsFromList: fromList,
+        }),
     );
     return {
       ...(await this.buildResponse(user)),
@@ -97,7 +119,7 @@ export class AuthService {
     this.fair.assertStudentWindowOpen('Student registration');
     const { email, password, emailToken, registrationNumber, ...profile } = dto;
     // Also counts wrong numbers. The unique AIUB ID stops a second account.
-    await this.alumni.check(profile.aiubId, registrationNumber);
+    const listed = await this.alumni.check(profile.aiubId, registrationNumber);
     const user = await this.createAccount(
       email,
       password,
@@ -106,6 +128,10 @@ export class AuthService {
       (manager, userId) =>
         this.studentsService.createForUser(manager, userId, {
           ...profile,
+          // Name stays as typed (it can be edited); these come from the list.
+          program: listed.program,
+          faculty: listed.faculty,
+          academicsFromList: !!(listed.program || listed.faculty),
           studyLevel: StudyLevel.GRADUATED,
           isAlumni: true,
         }),
@@ -113,6 +139,24 @@ export class AuthService {
     return {
       ...(await this.buildResponse(user)),
       profile: await this.studentsService.getOwnProfile(user.id),
+    };
+  }
+
+  /**
+   * Current student sign-up, after the AIUB email is verified: what the
+   * current student list has for this ID. The email token is checked, not used up.
+   */
+  async lookupCurrentStudent(
+    email: string,
+    emailToken: string,
+  ): Promise<CurrentStudentLookup> {
+    await this.signupEmail.assertToken(email, emailToken);
+    const record = await this.currentList.find(email.split('@')[0]);
+    return {
+      found: !!record,
+      name: record?.name ?? null,
+      program: record?.program ?? null,
+      faculty: record?.faculty ?? null,
     };
   }
 

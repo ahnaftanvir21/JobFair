@@ -31,6 +31,7 @@ import { Education } from './entities/education.entity.js';
 import { Experience } from './entities/experience.entity.js';
 import { Reference } from './entities/reference.entity.js';
 import { StudentProfile } from './entities/student-profile.entity.js';
+import { AIUB_NAME, isAiubEducation } from './aiub-academics.js';
 
 const PG_UNIQUE_VIOLATION = '23505';
 
@@ -42,8 +43,16 @@ export interface ProfileCompleteness {
 }
 
 /** Profile data collected at registration (everything except files). */
-export type StudentRegistrationData = CreateStudentProfileDto & {
+export type StudentRegistrationData = Omit<
+  CreateStudentProfileDto,
+  'program' | 'faculty'
+> & {
+  /** Alumni: from the convocation list, null if the list has none. */
+  program: string | null;
+  faculty: string | null;
   isAlumni?: boolean;
+  /** Program and faculty came from an uploaded list and are locked. */
+  academicsFromList?: boolean;
   educations: CreateEducationDto[];
   experiences?: CreateExperienceDto[];
   references?: CreateReferenceDto[];
@@ -80,6 +89,12 @@ export class StudentsService {
     data: StudentRegistrationData,
   ): Promise<void> {
     const { educations, experiences = [], references = [], ...fields } = data;
+
+    if (!educations.some(isAiubEducation)) {
+      throw new BadRequestException(
+        `Add your AIUB education: a BSc or MSc entry at ${AIUB_NAME}`,
+      );
+    }
 
     const levels = educations
       .map((e) => e.level)
@@ -127,6 +142,16 @@ export class StudentsService {
       throw new BadRequestException(
         'Alumni accounts stay as Graduated. Current students register with their AIUB student email.',
       );
+    }
+    // Program and faculty from an uploaded list (alumni or current students) are locked.
+    if (profile.academicsFromList || profile.isAlumni) {
+      for (const key of ['program', 'faculty'] as const) {
+        if (dto[key] !== undefined && profile[key] && dto[key] !== profile[key]) {
+          throw new BadRequestException(
+            'Program and faculty come from the AIUB student list and cannot be changed. If they are wrong, contact the Office of Placement & Alumni (opa@aiub.edu).',
+          );
+        }
+      }
     }
     await this.saveProfile(this.profiles.merge(profile, dto));
     return this.getOwnProfile(userId);
@@ -197,10 +222,15 @@ export class StudentsService {
   }
 
   completeness(
-    profile: Pick<StudentProfile, 'address' | 'gender' | 'cvUrl'>,
+    profile: Pick<
+      StudentProfile,
+      'address' | 'gender' | 'cvUrl' | 'program' | 'faculty'
+    >,
     educationCount: number,
   ): ProfileCompleteness {
     const missing: string[] = [];
+    if (!profile.program) missing.push('program');
+    if (!profile.faculty) missing.push('faculty');
     if (!profile.address) missing.push('address');
     if (!profile.gender) missing.push('gender');
     if (educationCount === 0) missing.push('education');
@@ -285,9 +315,13 @@ export class StudentsService {
     if (dto.level && dto.level !== row.level) {
       await this.assertEducationLevelFree(profile.id, dto.level);
     }
+    const wasAiub = isAiubEducation(row);
     const { cgpa, ...rest } = dto;
     this.educations.merge(row, rest);
     if (cgpa !== undefined) row.cgpa = this.cgpa(cgpa);
+    if (wasAiub && !isAiubEducation(row)) {
+      await this.assertOtherAiubEducation(profile.id, row.id);
+    }
     return this.educations.save(row);
   }
 
@@ -299,6 +333,9 @@ export class StudentsService {
       profile.id,
       'Education',
     );
+    if (isAiubEducation(row)) {
+      await this.assertOtherAiubEducation(profile.id, row.id);
+    }
     await this.educations.remove(row);
   }
 
@@ -447,6 +484,19 @@ export class StudentsService {
     const row = await repo.findOne({ where: { id, studentId } as never });
     if (!row) throw new NotFoundException(`${label} not found`);
     return row;
+  }
+
+  /** The AIUB degree from registration stays: it cannot be removed or moved to another university. */
+  private async assertOtherAiubEducation(
+    studentId: string,
+    exceptId: string,
+  ): Promise<void> {
+    const rows = await this.educations.findBy({ studentId });
+    if (!rows.some((e) => e.id !== exceptId && isAiubEducation(e))) {
+      throw new BadRequestException(
+        `Your AIUB degree must stay: it cannot be removed, and the university stays ${AIUB_NAME} (BSc or MSc).`,
+      );
+    }
   }
 
   /** SSC, HSC, BSc, MSc 1 and MSc 2 can each appear once. Professional can repeat. */

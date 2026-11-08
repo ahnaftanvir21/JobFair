@@ -34,6 +34,18 @@ export class AlumniRecord {
   @Column({ type: 'varchar', length: 150, nullable: true })
   name: string | null;
 
+  /** From the list's Program column; copied to the alumnus's profile. */
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  program: string | null;
+
+  /** From the list's Faculty column, matched to AIUB_FACULTIES when possible. */
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  faculty: string | null;
+
+  /** E.g. "10th Convocation". */
+  @Column({ type: 'varchar', length: 60, nullable: true })
+  convocation: string | null;
+
   /** Wrong registration numbers in a row; reset by a right one. */
   @Column({ type: 'int', default: 0 })
   failedAttempts: number;

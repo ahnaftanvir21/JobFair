@@ -28,6 +28,7 @@ import type {
   RegisterStudentDto,
 } from './dto/index.js';
 import type { AlumniService } from '../alumni/alumni.service.js';
+import type { CurrentStudentListService } from '../alumni/current-student-list.service.js';
 import type { SignupEmailService } from './signup-email.service.js';
 
 const PAST = new Date('2000-01-01');
@@ -40,6 +41,8 @@ const studentDto: RegisterStudentDto = {
   mobileNumber: '01812345678',
   preferredJobType: PreferredJobType.FULL_TIME,
   studyLevel: StudyLevel.GRADUATED,
+  program: 'Bachelor of Science in Computer Science and Engineering',
+  faculty: 'Faculty of Science and Technology',
   preferredIndustryTypes: ['Software'],
   seminarParticipation: true,
   address: 'Dhaka',
@@ -108,6 +111,7 @@ describe('AuthService', () => {
   let verification: { required: boolean; start: ReturnType<typeof vi.fn> };
   let signupEmail: { consumeToken: ReturnType<typeof vi.fn> };
   let alumni: { check: ReturnType<typeof vi.fn> };
+  let currentList: { find: ReturnType<typeof vi.fn> };
 
   function makeService(config = makeConfig()) {
     const dataSource = {
@@ -124,6 +128,7 @@ describe('AuthService', () => {
       verification as unknown as EmailVerificationService,
       signupEmail as unknown as SignupEmailService,
       alumni as unknown as AlumniService,
+      currentList as unknown as CurrentStudentListService,
     );
   }
 
@@ -150,8 +155,15 @@ describe('AuthService', () => {
     };
     verification = { required: true, start: vi.fn().mockResolvedValue(undefined) };
     signupEmail = { consumeToken: vi.fn().mockResolvedValue(undefined) };
+    currentList = { find: vi.fn().mockResolvedValue(null) };
     alumni = {
-      check: vi.fn().mockResolvedValue({ message: 'ok', name: 'RAHIM UDDIN' }),
+      check: vi.fn().mockResolvedValue({
+        message: 'ok',
+        name: 'RAHIM UDDIN',
+        program: 'Bachelor of Business Administration',
+        faculty: 'Faculty of Business Administration',
+        convocation: '10th Convocation',
+      }),
     };
   });
 
@@ -265,8 +277,48 @@ describe('AuthService', () => {
     });
   });
 
+  describe('current student list', () => {
+    it('uses the list program and faculty and locks them', async () => {
+      currentList.find.mockResolvedValue({
+        aiubId: '22-48123-1',
+        name: 'RAHIM UDDIN',
+        program: 'Bachelor of Business Administration',
+        faculty: 'Faculty of Business Administration',
+      });
+      await makeService().registerStudent(studentDto);
+      expect(currentList.find).toHaveBeenCalledWith('22-48123-1');
+      expect(students.createForUser.mock.calls[0][2]).toMatchObject({
+        program: 'Bachelor of Business Administration',
+        faculty: 'Faculty of Business Administration',
+        academicsFromList: true,
+      });
+    });
+
+    it('lets a student who is not on the list pick program and faculty', async () => {
+      await makeService().registerStudent(studentDto);
+      expect(students.createForUser.mock.calls[0][2]).toMatchObject({
+        program: studentDto.program,
+        faculty: studentDto.faculty,
+        academicsFromList: false,
+      });
+    });
+
+    it('asks for program and faculty when the ID is not on the list', async () => {
+      const { program: _p, faculty: _f, ...rest } = studentDto;
+      await expect(
+        makeService().registerStudent(rest as RegisterStudentDto),
+      ).rejects.toThrow('Enter your program');
+      expect(users.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('registerAlumni', () => {
-    const { studyLevel: _level, ...rest } = studentDto;
+    const {
+      studyLevel: _level,
+      program: _program,
+      faculty: _faculty,
+      ...rest
+    } = studentDto;
     const alumniDto: RegisterAlumniDto = {
       ...rest,
       email: 'rahim.uddin@gmail.com',
@@ -288,8 +340,12 @@ describe('AuthService', () => {
         emailVerified: true,
       });
       const profile = students.createForUser.mock.calls[0][2];
+      // Name as typed; program and faculty from the list.
       expect(profile).toMatchObject({
+        name: 'Rahim Uddin',
         aiubId: '22-48123-1',
+        program: 'Bachelor of Business Administration',
+        faculty: 'Faculty of Business Administration',
         studyLevel: StudyLevel.GRADUATED,
         isAlumni: true,
       });

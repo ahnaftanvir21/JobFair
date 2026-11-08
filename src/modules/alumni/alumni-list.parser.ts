@@ -1,16 +1,21 @@
 import { BadRequestException } from '@nestjs/common';
 import readXlsxFile from 'read-excel-file/node';
+import { normalizeFaculty } from '../students/aiub-academics.js';
 import { AIUB_ID } from '../students/dto/student-profile.dto.js';
 
 export interface AlumniListRow {
   /** Row number in the spreadsheet, starting at 1. */
   row: number;
   aiubId: string;
-  /** Normalized: letters and digits only, upper case. */
+  /** Normalized: letters and digits only, upper case. Empty for the current student list. */
   registrationNumber: string;
-  /** As written in the sheet, for showing to the admin. */
+  /** As written in the sheet, for showing to the admin. Empty for the current student list. */
   registrationText: string;
   name: string | null;
+  program: string | null;
+  /** Matched to AIUB_FACULTIES when possible. */
+  faculty: string | null;
+  convocation: string | null;
 }
 
 export interface AlumniListProblem {
@@ -31,7 +36,14 @@ export type AlumniUpload = {
 const WRONG_FILE =
   'Upload the list as .xlsx or .csv. In Google Sheets: File > Download > Microsoft Excel (.xlsx).';
 const NO_HEADER =
-  'Could not find the ID and Grad Reg columns. The first row should have headings like "ID", "Grad Reg" and "Name".';
+  'Could not find the ID and Reg # columns. The first row should have headings like "ID", "Reg #", "Name", "Program" and "Faculty".';
+const NO_ID_HEADER =
+  'Could not find the ID column. The first row should have headings like "ID", "Name", "Program" and "Faculty".';
+
+export interface SheetOptions {
+  /** False for the current student list, which has no registration numbers. */
+  registration?: boolean;
+}
 
 /**
  * Registration numbers are compared on letters and digits only, so
@@ -42,7 +54,10 @@ export function normalizeRegistration(value: string): string {
 }
 
 /** Reads the first sheet that has the ID and registration columns. */
-export async function readAlumniFile(file: AlumniUpload): Promise<string[][]> {
+export async function readAlumniFile(
+  file: AlumniUpload,
+  { registration = true }: SheetOptions = {},
+): Promise<string[][]> {
   const name = (file.originalname ?? '').toLowerCase();
   const isZip = file.buffer.subarray(0, 2).toString('latin1') === 'PK';
   if (isZip) {
@@ -55,7 +70,7 @@ export async function readAlumniFile(file: AlumniUpload): Promise<string[][]> {
     const grids = sheets.map((s) =>
       s.data.map((r) => r.map((cell) => cellText(cell))),
     );
-    return grids.find((g) => findHeader(g)) ?? grids[0] ?? [];
+    return grids.find((g) => findHeader(g, registration)) ?? grids[0] ?? [];
   }
   if (/\.(csv|tsv|txt)$/.test(name)) {
     return parseCsv(file.buffer.toString('utf8'));
@@ -64,9 +79,14 @@ export async function readAlumniFile(file: AlumniUpload): Promise<string[][]> {
 }
 
 /** Turns the sheet into rows, with a list of the rows that were skipped and why. */
-export function parseAlumniSheet(sheet: string[][]): ParsedAlumniList {
-  const header = findHeader(sheet);
-  if (!header) throw new BadRequestException(NO_HEADER);
+export function parseAlumniSheet(
+  sheet: string[][],
+  { registration = true }: SheetOptions = {},
+): ParsedAlumniList {
+  const header = findHeader(sheet, registration);
+  if (!header) {
+    throw new BadRequestException(registration ? NO_HEADER : NO_ID_HEADER);
+  }
 
   const rows: AlumniListRow[] = [];
   const problems: AlumniListProblem[] = [];
@@ -76,11 +96,12 @@ export function parseAlumniSheet(sheet: string[][]): ParsedAlumniList {
     const line = sheet[i];
     const row = i + 1;
     const aiubId = (line[header.id] ?? '').replace(/\s/g, '');
-    const rawReg = (line[header.reg] ?? '').trim();
-    const name =
-      header.name === -1
+    const rawReg = header.reg === -1 ? '' : (line[header.reg] ?? '').trim();
+    const text = (col: number, max: number) =>
+      col === -1
         ? ''
-        : (line[header.name] ?? '').replace(/\s+/g, ' ').trim();
+        : (line[col] ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+    const name = text(header.name, 150);
     if (!aiubId && !rawReg && !name) continue; // empty row
 
     if (!AIUB_ID.test(aiubId)) {
@@ -93,7 +114,10 @@ export function parseAlumniSheet(sheet: string[][]): ParsedAlumniList {
       continue;
     }
     const registrationNumber = normalizeRegistration(rawReg);
-    if (registrationNumber.length < 4 || registrationNumber.length > 30) {
+    if (
+      registration &&
+      (registrationNumber.length < 4 || registrationNumber.length > 30)
+    ) {
       problems.push({
         row,
         message: rawReg
@@ -104,10 +128,19 @@ export function parseAlumniSheet(sheet: string[][]): ParsedAlumniList {
     }
     const earlier = seen.get(aiubId);
     if (earlier) {
-      if (earlier.registrationNumber !== registrationNumber) {
+      if (registration && earlier.registrationNumber !== registrationNumber) {
         problems.push({
           row,
           message: `${aiubId} is also on row ${earlier.row} with a different registration number. Row ${earlier.row} was used.`,
+        });
+      } else if (
+        !registration &&
+        (earlier.name !== (name || null) ||
+          earlier.program !== (text(header.program, 200) || null))
+      ) {
+        problems.push({
+          row,
+          message: `${aiubId} is also on row ${earlier.row}. Row ${earlier.row} was used.`,
         });
       }
       continue;
@@ -117,7 +150,10 @@ export function parseAlumniSheet(sheet: string[][]): ParsedAlumniList {
       aiubId,
       registrationNumber,
       registrationText: rawReg.replace(/\s+/g, ' ').slice(0, 40),
-      name: name ? name.slice(0, 150) : null,
+      name: name || null,
+      program: text(header.program, 200) || null,
+      faculty: normalizeFaculty(text(header.faculty, 150)),
+      convocation: text(header.convocation, 60) || null,
     };
     seen.set(aiubId, entry);
     rows.push(entry);
@@ -127,7 +163,16 @@ export function parseAlumniSheet(sheet: string[][]): ParsedAlumniList {
 
 function findHeader(
   sheet: string[][],
-): { index: number; id: number; reg: number; name: number } | null {
+  registration = true,
+): {
+  index: number;
+  id: number;
+  reg: number;
+  name: number;
+  program: number;
+  faculty: number;
+  convocation: number;
+} | null {
   for (let index = 0; index < Math.min(sheet.length, 10); index++) {
     const cells = sheet[index].map((c) =>
       c.toLowerCase().replace(/[^a-z]/g, ''),
@@ -136,12 +181,17 @@ function findHeader(
       ['id', 'aiubid', 'studentid', 'aiubstudentid'].includes(c),
     );
     const reg = cells.findIndex((c) => c.includes('reg'));
-    if (id !== -1 && reg !== -1) {
+    if (id !== -1 && (reg !== -1 || !registration)) {
       return {
         index,
         id,
         reg,
         name: cells.findIndex((c) => c.includes('name')),
+        program: cells.findIndex(
+          (c) => c.includes('program') || c === 'degree',
+        ),
+        faculty: cells.findIndex((c) => c.includes('faculty')),
+        convocation: cells.findIndex((c) => c.includes('convocation')),
       };
     }
   }
