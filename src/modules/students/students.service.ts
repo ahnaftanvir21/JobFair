@@ -35,6 +35,21 @@ import { AIUB_NAME, isAiubEducation } from './aiub-academics.js';
 
 const PG_UNIQUE_VIOLATION = '23505';
 
+/**
+ * SQL test: student `s` applied to one of the employer's jobs or sent a CV
+ * straight to the employer. The employer is given by user id (:employerUserId).
+ * Employers see only these students; there is no open pool.
+ */
+export const APPLIED_TO_EMPLOYER_SQL = `(
+  EXISTS (SELECT 1 FROM applications a
+    JOIN job_posts j ON j.id = a.job_post_id
+    JOIN employer_profiles e ON e.id = j.employer_id
+    WHERE a.student_id = s.id AND e.user_id = :employerUserId)
+  OR EXISTS (SELECT 1 FROM cv_drops d
+    JOIN employer_profiles e ON e.id = d.employer_id
+    WHERE d.student_id = s.id AND e.user_id = :employerUserId)
+)`;
+
 export interface ProfileCompleteness {
   /** True when the student can apply to jobs. */
   isComplete: boolean;
@@ -163,9 +178,17 @@ export class StudentsService {
     return this.toView(profile);
   }
 
-  /** Full profile for employers. */
-  async getById(id: string): Promise<StudentProfileView> {
-    const profile = await this.findFull({ id });
+  /** Full profile, only for an employer the student applied or sent a CV to. */
+  async getById(
+    id: string,
+    employerUserId: string,
+  ): Promise<StudentProfileView> {
+    const allowed = await this.profiles
+      .createQueryBuilder('s')
+      .where('s.id = :id', { id })
+      .andWhere(APPLIED_TO_EMPLOYER_SQL, { employerUserId })
+      .getExists();
+    const profile = allowed ? await this.findFull({ id }) : null;
     if (!profile) throw new NotFoundException('Student not found');
     return this.toView(profile);
   }
@@ -240,12 +263,15 @@ export class StudentsService {
 
   // ---------- Search (employers) ----------
 
+  /** Students who applied or sent a CV to this employer. */
   async search(
     query: SearchStudentsQueryDto,
+    employerUserId: string,
   ): Promise<Paginated<StudentProfileView>> {
     const qb = this.profiles
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.user', 'u')
+      .where(APPLIED_TO_EMPLOYER_SQL, { employerUserId })
       .orderBy('s.createdAt', 'DESC')
       .skip(query.skip)
       .take(query.limit);

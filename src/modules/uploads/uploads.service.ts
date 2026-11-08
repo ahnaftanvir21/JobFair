@@ -14,12 +14,32 @@ export class UploadsService {
     kind: FileKind,
     url: string,
   ): Promise<boolean> {
-    // Employers can browse all students, so they can read every file,
-    // but only once an admin has approved the company.
     if (user.role === UserRole.EMPLOYER) {
+      // Approved companies only.
+      if (kind !== FileKind.CV && kind !== FileKind.PICTURE) {
+        const rows: unknown[] = await this.dataSource.query(
+          `SELECT 1 FROM employer_profiles WHERE user_id = $1 AND status = 'approved'`,
+          [user.id],
+        );
+        return rows.length > 0;
+      }
+      // CVs and photos: only of students who applied to this company's jobs
+      // or sent their CV to it.
       const rows: unknown[] = await this.dataSource.query(
-        `SELECT 1 FROM employer_profiles WHERE user_id = $1 AND status = 'approved'`,
-        [user.id],
+        `WITH company AS (
+           SELECT id FROM employer_profiles WHERE user_id = $1 AND status = 'approved'
+         ), sent AS (
+           SELECT a.student_id, a.cv_url FROM applications a
+             JOIN job_posts j ON j.id = a.job_post_id
+            WHERE j.employer_id IN (SELECT id FROM company)
+           UNION ALL
+           SELECT d.student_id, d.cv_url FROM cv_drops d
+            WHERE d.employer_id IN (SELECT id FROM company)
+         )
+         SELECT 1 FROM sent x JOIN student_profiles sp ON sp.id = x.student_id
+          WHERE x.cv_url = $2 OR sp.cv_url = $2 OR sp.profile_picture_url = $2
+          LIMIT 1`,
+        [user.id, url],
       );
       return rows.length > 0;
     }

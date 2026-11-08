@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import {
   paginated,
   PaginationQueryDto,
@@ -22,7 +22,6 @@ import {
 } from '../uploads/file-storage.service.js';
 import {
   CreateCvDropDto,
-  CvDropScope,
   ReceivedCvDropsQueryDto,
 } from './dto/cv-drop.dto.js';
 import { CvDrop } from './entities/cv-drop.entity.js';
@@ -39,7 +38,7 @@ export class CvDropsService {
     private readonly fair: FairService,
   ) {}
 
-  /** Drop a CV to the pool or one company. Dropping again to the same place replaces it. */
+  /** Send a CV to one company. Sending again to the same company replaces it. */
   async drop(
     userId: string,
     dto: CreateCvDropDto,
@@ -52,9 +51,8 @@ export class CvDropsService {
         'Attach a CV file, or upload one to your profile first',
       );
     }
-    const employerId = dto.employerId ?? null;
+    const employerId = dto.employerId;
     if (
-      employerId &&
       !(await this.employerProfiles.existsBy({
         id: employerId,
         status: EmployerStatus.APPROVED,
@@ -69,7 +67,7 @@ export class CvDropsService {
 
     const existing = await this.drops.findOneBy({
       studentId: student.id,
-      employerId: employerId ?? IsNull(),
+      employerId,
     });
     const drop =
       existing ?? this.drops.create({ studentId: student.id, employerId });
@@ -85,7 +83,8 @@ export class CvDropsService {
   ): Promise<Paginated<CvDrop>> {
     const student = await this.students.requireProfileByUser(userId);
     const [items, total] = await this.drops.findAndCount({
-      where: { studentId: student.id },
+      // Old drops to the removed general pool (no company) are hidden.
+      where: { studentId: student.id, employerId: Not(IsNull()) },
       relations: { employer: true },
       order: { updatedAt: 'DESC' },
       skip: query.skip,
@@ -94,22 +93,14 @@ export class CvDropsService {
     return paginated(items, total, query);
   }
 
-  /** CVs sent to my company plus the general pool. */
+  /** CVs students sent to my company. */
   async received(
     userId: string,
     query: ReceivedCvDropsQueryDto,
   ): Promise<Paginated<CvDrop>> {
     const employer = await this.employers.requireProfileByUser(userId);
-    const scope = query.scope ?? CvDropScope.ALL;
-    const where =
-      scope === CvDropScope.COMPANY
-        ? { employerId: employer.id }
-        : scope === CvDropScope.POOL
-          ? { employerId: IsNull() }
-          : [{ employerId: employer.id }, { employerId: IsNull() }];
-
     const [items, total] = await this.drops.findAndCount({
-      where,
+      where: { employerId: employer.id },
       relations: { student: { user: true } },
       order: { updatedAt: 'DESC' },
       skip: query.skip,

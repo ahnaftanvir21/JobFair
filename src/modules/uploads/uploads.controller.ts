@@ -28,7 +28,7 @@ export class UploadsController {
   @ApiOperation({
     summary: 'Download a stored file',
     description:
-      'Logos: anyone. Pictures and attachments: any logged-in user. CVs: employers, or the student who owns the CV.',
+      'Logos: anyone. Attachments: any logged-in user. Pictures: students, or a company the student applied or sent a CV to. CVs: the student who owns the CV, or a company the student applied or sent a CV to.',
   })
   async download(
     @Param('kind') kind: string,

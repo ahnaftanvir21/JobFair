@@ -31,10 +31,11 @@ export class CvDropsController {
   @ApiOperation({
     summary: 'Just drop your CV',
     description:
-      'Without employerId the CV goes to the general pool. Leave out the file to use the profile CV.',
+      'employerId is required: only that company sees the CV. Leave out the file to use the profile CV.',
   })
   @ApiFileUpload('CV drop', {
     fileRequired: false,
+    requiredFields: ['employerId'],
     fields: {
       employerId: { type: 'string', format: 'uuid' },
       note: { type: 'string' },
@@ -57,7 +58,7 @@ export class CvDropsController {
 
   @Get('received')
   @Roles(UserRole.EMPLOYER)
-  @ApiOperation({ summary: 'CVs sent to my company and the general pool' })
+  @ApiOperation({ summary: 'CVs students sent to my company' })
   received(
     @CurrentUser() user: AuthUser,
     @Query() query: ReceivedCvDropsQueryDto,

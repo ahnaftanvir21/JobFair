@@ -183,17 +183,26 @@ export class StudentsController {
 
   @Get()
   @Roles(UserRole.EMPLOYER)
-  @ApiOperation({ summary: 'Search all students (employers)' })
-  search(@Query() query: SearchStudentsQueryDto) {
-    return this.studentsService.search(query);
+  @ApiOperation({
+    summary: 'My applicants: students who applied to my jobs or sent me a CV',
+  })
+  search(
+    @CurrentUser() user: AuthUser,
+    @Query() query: SearchStudentsQueryDto,
+  ) {
+    return this.studentsService.search(query, user.id);
   }
 
   @Get(':id')
   @Roles(UserRole.EMPLOYER)
   @ApiOperation({
-    summary: 'One student with education, experience and references',
+    summary: 'One applicant with education, experience and references',
+    description: '404 unless the student applied or sent a CV to my company.',
   })
-  getOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.studentsService.getById(id);
+  getOne(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.studentsService.getById(id, user.id);
   }
 }

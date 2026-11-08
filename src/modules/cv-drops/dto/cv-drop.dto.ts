@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
-  IsEnum,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -11,11 +11,11 @@ import { PaginationQueryDto } from '../../../common/dto/pagination.dto.js';
 import { emptyToNull } from '../../../common/utils/text.util.js';
 
 export class CreateCvDropDto {
-  /** Company to send the CV to. Leave empty for the general pool. */
-  @IsOptional()
+  /** Company to send the CV to. Only that company can see it. */
   @Transform(emptyToNull)
+  @IsNotEmpty({ message: 'Choose a company to send your CV to' })
   @IsUUID()
-  employerId?: string | null;
+  employerId: string;
 
   /** Short message to the employer */
   @IsOptional()
@@ -26,17 +26,9 @@ export class CreateCvDropDto {
   note?: string | null;
 }
 
-export enum CvDropScope {
-  /** Sent directly to my company */
-  COMPANY = 'company',
-  /** General pool, visible to every employer */
-  POOL = 'pool',
-  ALL = 'all',
-}
-
+/** Kept so old clients that still send ?scope= are not rejected. Ignored. */
 export class ReceivedCvDropsQueryDto extends PaginationQueryDto {
-  /** Default: all */
   @IsOptional()
-  @IsEnum(CvDropScope)
-  scope?: CvDropScope;
+  @IsString()
+  scope?: string;
 }

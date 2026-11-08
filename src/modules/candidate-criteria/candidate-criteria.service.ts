@@ -137,7 +137,7 @@ export class CandidateCriteriaService {
       studyLevel: row.studyLevel ?? undefined,
       industry: row.industryType ?? undefined,
     });
-    return this.students.search(search);
+    return this.students.search(search, userId);
   }
 
   private async requireOwn(

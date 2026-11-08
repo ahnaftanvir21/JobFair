@@ -60,7 +60,6 @@ export class AdminService {
       jobsOpen,
       applicationRows,
       cvDropsTotal,
-      cvDropsToPool,
       criteriaTotal,
       facultyRows,
     ] = await Promise.all([
@@ -86,8 +85,8 @@ export class AdminService {
         .addSelect('COUNT(*)', 'count')
         .groupBy('a.status')
         .getRawMany<{ status: ApplicationStatus; count: string }>(),
-      this.cvDrops.count(),
-      this.cvDrops.countBy({ employerId: IsNull() }),
+      // Old drops to the removed general pool have no company; leave them out.
+      this.cvDrops.countBy({ employerId: Not(IsNull()) }),
       this.criteria.count(),
       this.students
         .createQueryBuilder('s')
@@ -128,11 +127,7 @@ export class AdminService {
         total: sum(applicationsByStatus),
         ...applicationsByStatus,
       },
-      cvDrops: {
-        total: cvDropsTotal,
-        toPool: cvDropsToPool,
-        toCompanies: cvDropsTotal - cvDropsToPool,
-      },
+      cvDrops: { total: cvDropsTotal },
       candidateCriteria: { total: criteriaTotal },
     };
   }

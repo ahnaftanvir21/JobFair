@@ -690,7 +690,7 @@ Content-Type: application/json
 `PATCH /students/me/references/:id` changes the fields you send. `DELETE` returns `204`.
 
 ### GET /students
-**Who:** employer. Searches every student.
+**Who:** employer. Your candidates: only students who applied to one of your jobs or sent their CV to your company. There is no open list of every student.
 
 | Query | Meaning |
 |---|---|
@@ -729,9 +729,9 @@ Authorization: Bearer <employer token>
 **Errors:** `403` for students.
 
 ### GET /students/:id
-**Who:** employer. One student with education, experience and references. Same shape as `GET /students/me`.
+**Who:** employer. One of your candidates with education, experience and references. Same shape as `GET /students/me`.
 
-**Errors:** `404 Student not found`.
+**Errors:** `404 Student not found` (also when the student has not applied or sent a CV to your company).
 
 ---
 
@@ -1172,23 +1172,23 @@ Content-Type: application/json
 
 ## 8. CV drops
 
-"Just drop CV": a student sends their CV to one company, or to the **general pool** that every employer can see.
+"Just drop CV": a student sends their CV to one company. Only that company can see it. There is no general pool.
 
 ### POST /cv-drops
 **Who:** student.
-- Optional `employerId`: a company. Leave it out for the pool.
+- Required `employerId`: the company.
 - Optional `note` (max 500 characters).
 - Optional `file`: a PDF. Without one, the profile CV is used.
 
-Dropping again to the same company (or to the pool) **replaces** the earlier drop.
+Dropping again to the same company **replaces** the earlier drop.
 
-JSON (profile CV, to the pool):
+JSON (profile CV):
 ```http
 POST /api/cv-drops
 Authorization: Bearer <student token>
 Content-Type: application/json
 
-{ "note": "Open to backend roles" }
+{ "employerId": "7701d31b-8fb9-4ddc-b1b8-ef3566fd936f", "note": "Open to backend roles" }
 ```
 
 Multipart (a new CV, to one company):
@@ -1205,8 +1205,8 @@ curl -X POST http://localhost:3000/api/cv-drops \
 {
   "id": "9ff69a12-8db3-4864-85f3-b4344576f0e6",
   "studentId": "bf882db7-5cb9-41e7-bef7-aec1c915a5ad",
-  "employerId": null,
-  "employer": null,
+  "employerId": "7701d31b-8fb9-4ddc-b1b8-ef3566fd936f",
+  "employer": { "id": "7701d31b-8fb9-4ddc-b1b8-ef3566fd936f", "companyName": "Nexus Softworks Ltd.", "...": "..." },
   "cvUrl": "/api/uploads/cvs/3eefa7fa-0d40-4acb-8320-142a5fa81899.pdf",
   "note": "Open to backend roles",
   "createdAt": "2026-11-04T06:17:08.506Z",
@@ -1215,23 +1215,18 @@ curl -X POST http://localhost:3000/api/cv-drops \
 ```
 
 **Errors:**
+- `400 Choose a company to send your CV to`
 - `400 Attach a CV file, or upload one to your profile first`
 - `404 Company not found`
 
 ### GET /cv-drops/mine
-**Who:** student. Your drops, each with the company it went to (`null` = pool). Paged.
+**Who:** student. Your drops, each with the company it went to. Paged.
 
 ### GET /cv-drops/received
-**Who:** employer. CVs dropped to you. Paged.
-
-| `scope` | Shows |
-|---|---|
-| `company` | Drops sent directly to your company |
-| `pool` | Drops in the general pool |
-| `all` (default) | Both |
+**Who:** employer. CVs students sent to your company. Paged.
 
 ```http
-GET /api/cv-drops/received?scope=company
+GET /api/cv-drops/received
 Authorization: Bearer <employer token>
 ```
 
@@ -1331,7 +1326,7 @@ Content-Type: application/json
 **201 Created:** the criteria with `"attachmentUrl": "/api/uploads/attachments/fece404b-....pdf"`.
 
 ### GET /candidate-criteria/:id/matches
-**Who:** the company that posted it. Students whose job type, study level and preferred industries fit the criteria. It returns the same shape as `GET /students`. Paged.
+**Who:** the company that posted it. Your candidates (students who applied or sent you a CV) whose job type, study level and preferred industries fit the criteria. It returns the same shape as `GET /students`. Paged.
 
 ### DELETE /candidate-criteria/:id
 **Who:** the company that posted it. Returns `204 No Content`.
@@ -1346,8 +1341,9 @@ Opens a stored file. Use the URL exactly as the API returned it (for example `cv
 | File | Who can open it |
 |---|---|
 | Company logo | Anyone, no login |
-| Profile picture, criteria attachment | Students and employers |
-| CV | The student who owns it, and employers |
+| Criteria attachment | Students and approved employers |
+| Profile picture | Students, and a company the student applied or sent a CV to |
+| CV | The student who owns it, and a company the student applied or sent a CV to |
 
 ```http
 GET /api/uploads/cvs/3eefa7fa-0d40-4acb-8320-142a5fa81899.pdf
@@ -1370,7 +1366,7 @@ An `<img src>` or plain link can't send the `Authorization` header. For anything
 All routes need an admin token.
 
 ### GET /admin/stats
-Overall numbers: students (total, with CV, seminar sign-ups, `alumni`, and `byFaculty`), companies by status (`pending`, `approved`, `rejected`), jobs (open, closed), applications by status, CV drops (to the pool, to companies) and candidate criteria.
+Overall numbers: students (total, with CV, seminar sign-ups, `alumni`, and `byFaculty`), companies by status (`pending`, `approved`, `rejected`), jobs (open, closed), applications by status, CV drops and candidate criteria.
 
 `students.byFaculty` counts registered accounts per faculty, biggest first, with `faculty: null` (accounts made before faculty was asked) last:
 ```json
@@ -1445,7 +1441,6 @@ Removes one ID from the list. **204**. An account already made with it keeps its
 | Question `type` | `text`, `single_choice` |
 | `joiningDate` | `immediately`, `within_1_week`, `within_15_days`, `within_1_month` |
 | Application `status` | `submitted`, `shortlisted`, `rejected`, `hired` |
-| CV drop `scope` | `company`, `pool`, `all` |
 
 Formats:
 - AIUB ID: `NN-NNNNN-N`, for example `22-48123-1`.
@@ -1474,8 +1469,8 @@ Formats:
 | PATCH, DELETE | `/students/me/experiences/:id` | student |
 | POST | `/students/me/references` | student |
 | PATCH, DELETE | `/students/me/references/:id` | student |
-| GET | `/students` | employer |
-| GET | `/students/:id` | employer |
+| GET | `/students` | employer (own candidates) |
+| GET | `/students/:id` | employer (own candidates) |
 | GET, PATCH | `/employers/me` | employer |
 | POST | `/employers/me/logo` | employer |
 | GET | `/employers` | anyone |
