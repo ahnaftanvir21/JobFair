@@ -8,7 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcryptjs';
 import { DataSource, EntityManager } from 'typeorm';
-import { UserRole } from '../../common/enums/index.js';
+import { StudyLevel, UserRole } from '../../common/enums/index.js';
+import { AlumniService } from '../alumni/alumni.service.js';
 import { FairService } from '../../common/fair/fair.service.js';
 import type {
   AuthUser,
@@ -31,6 +32,7 @@ import {
   AuthResponseDto,
   AuthUserDto,
   LoginDto,
+  RegisterAlumniDto,
   RegisterEmployerDto,
   RegisterStudentDto,
 } from './dto/index.js';
@@ -57,6 +59,7 @@ export class AuthService {
     private readonly employersService: EmployersService,
     private readonly emailVerification: EmailVerificationService,
     private readonly signupEmail: SignupEmailService,
+    private readonly alumni: AlumniService,
   ) {}
 
   /** Creates the student account and full profile together. */
@@ -77,6 +80,35 @@ export class AuthService {
       UserRole.STUDENT,
       (manager, userId) =>
         this.studentsService.createForUser(manager, userId, profile),
+    );
+    return {
+      ...(await this.buildResponse(user)),
+      profile: await this.studentsService.getOwnProfile(user.id),
+    };
+  }
+
+  /**
+   * Creates an alumni account: any email (already checked with a code), and an
+   * AIUB ID plus registration number that match the alumni list.
+   */
+  async registerAlumni(
+    dto: RegisterAlumniDto,
+  ): Promise<StudentRegistrationResponse> {
+    this.fair.assertStudentWindowOpen('Student registration');
+    const { email, password, emailToken, registrationNumber, ...profile } = dto;
+    // Also counts wrong numbers. The unique AIUB ID stops a second account.
+    await this.alumni.check(profile.aiubId, registrationNumber);
+    const user = await this.createAccount(
+      email,
+      password,
+      emailToken,
+      UserRole.STUDENT,
+      (manager, userId) =>
+        this.studentsService.createForUser(manager, userId, {
+          ...profile,
+          studyLevel: StudyLevel.GRADUATED,
+          isAlumni: true,
+        }),
     );
     return {
       ...(await this.buildResponse(user)),

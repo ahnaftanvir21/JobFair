@@ -54,6 +54,13 @@ export class StudentProfile {
   @Column({ type: 'boolean' })
   seminarParticipation: boolean;
 
+  /**
+   * Registered as an alumnus with a personal email, checked against the
+   * alumni list. Always "graduated"; current students use their AIUB email.
+   */
+  @Column({ type: 'boolean', default: false })
+  isAlumni: boolean;
+
   // Step 2: full profile
   @Column({ type: 'varchar', length: 255, nullable: true })
   profilePictureUrl: string | null;

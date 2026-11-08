@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { paginated, type Paginated } from '../../common/dto/pagination.dto.js';
-import { EducationLevel } from '../../common/enums/index.js';
+import { EducationLevel, StudyLevel } from '../../common/enums/index.js';
 import { likePattern } from '../../common/utils/text.util.js';
 import { assertNotNull } from '../../common/utils/validation.util.js';
 import { FileKind } from '../uploads/file-kind.enum.js';
@@ -43,6 +43,7 @@ export interface ProfileCompleteness {
 
 /** Profile data collected at registration (everything except files). */
 export type StudentRegistrationData = CreateStudentProfileDto & {
+  isAlumni?: boolean;
   educations: CreateEducationDto[];
   experiences?: CreateExperienceDto[];
   references?: CreateReferenceDto[];
@@ -118,6 +119,15 @@ export class StudentsService {
   ): Promise<StudentProfileView> {
     assertNotNull(dto, REQUIRED_PROFILE_FIELDS);
     const profile = await this.requireProfileByUser(userId);
+    if (
+      profile.isAlumni &&
+      dto.studyLevel &&
+      dto.studyLevel !== StudyLevel.GRADUATED
+    ) {
+      throw new BadRequestException(
+        'Alumni accounts stay as Graduated. Current students register with their AIUB student email.',
+      );
+    }
     await this.saveProfile(this.profiles.merge(profile, dto));
     return this.getOwnProfile(userId);
   }

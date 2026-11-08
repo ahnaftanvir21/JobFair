@@ -61,20 +61,11 @@ export class RegisterDto {
   emailToken?: string;
 }
 
-/**
- * Student registration: account plus the whole profile in one request.
- * Picture and CV are uploaded afterwards with the returned token.
- */
-export class RegisterStudentDto extends IntersectionType(
+/** Account plus the whole profile: shared by student and alumni registration. */
+class StudentRegistrationFields extends IntersectionType(
   RegisterDto,
   OmitType(CreateStudentProfileDto, ['address', 'gender'] as const),
 ) {
-  /** AIUB student email only. The ID before @ must equal aiubId. */
-  @Matches(AIUB_STUDENT_EMAIL, {
-    message: 'Use your AIUB student email, like 23-54445-3@student.aiub.edu',
-  })
-  declare email: string;
-
   @Transform(trimValue)
   @IsString()
   @IsNotEmpty()
@@ -155,6 +146,47 @@ export class RegisterStudentDto extends IntersectionType(
 }
 
 /**
+ * Current student registration: account plus the whole profile in one request.
+ * Picture and CV are uploaded afterwards with the returned token.
+ */
+export class RegisterStudentDto extends StudentRegistrationFields {
+  /** AIUB student email only. The ID before @ must equal aiubId. */
+  @Matches(AIUB_STUDENT_EMAIL, {
+    message: 'Use your AIUB student email, like 23-54445-3@student.aiub.edu',
+  })
+  declare email: string;
+}
+
+/**
+ * Alumni registration: any email, proven by the code check, plus the AIUB ID
+ * and registration number from the alumni list. Study level is always graduated.
+ */
+export class RegisterAlumniDto extends OmitType(StudentRegistrationFields, [
+  'studyLevel',
+  'emailToken',
+] as const) {
+  @Transform(trimValue)
+  @IsString()
+  @IsNotEmpty({ message: 'Enter your registration number' })
+  @MaxLength(40)
+  @ApiProperty({
+    example: '22-36987-01',
+    description: 'Graduation registration number, as on the alumni list.',
+  })
+  registrationNumber: string;
+
+  /** Required: alumni always verify their personal email before registering. */
+  @IsString()
+  @Matches(/^[a-f0-9]{64}$/, {
+    message: 'Your email check is invalid. Verify your email again.',
+  })
+  @ApiProperty({
+    description: 'Email token from POST /auth/signup-code/verify for this email.',
+  })
+  emailToken: string;
+}
+
+/**
  * Employer registration: account plus the whole company profile in one request.
  * The logo is uploaded afterwards with the returned token.
  */
@@ -170,6 +202,11 @@ ApiProperty({
   format: 'email',
   maxLength: 255,
 })(RegisterStudentDto.prototype, 'email');
+ApiProperty({
+  example: 'ahnaf.sadman@gmail.com',
+  format: 'email',
+  maxLength: 255,
+})(RegisterAlumniDto.prototype, 'email');
 ApiProperty({
   example: 'hr@acme-software.com',
   format: 'email',

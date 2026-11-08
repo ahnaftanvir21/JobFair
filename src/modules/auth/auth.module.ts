@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule, type JwtModuleOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AlumniModule } from '../alumni/alumni.module.js';
 import { EmployersModule } from '../employers/employers.module.js';
 import { StudentsModule } from '../students/students.module.js';
 import { UploadsModule } from '../uploads/uploads.module.js';
@@ -25,6 +26,7 @@ import { JwtStrategy } from './strategies/jwt.strategy.js';
     StudentsModule,
     EmployersModule,
     UploadsModule,
+    AlumniModule,
     PassportModule,
     JwtModule.registerAsync({
       inject: [ConfigService],

@@ -1,5 +1,6 @@
 import { EmailVerificationService } from './email-verification.service.js';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   UnauthorizedException,
@@ -21,7 +22,13 @@ import { StudentsService } from '../students/students.service.js';
 import { User } from '../users/entities/user.entity.js';
 import { UsersService } from '../users/users.service.js';
 import { AuthService } from './auth.service.js';
-import type { RegisterEmployerDto, RegisterStudentDto } from './dto/index.js';
+import type {
+  RegisterAlumniDto,
+  RegisterEmployerDto,
+  RegisterStudentDto,
+} from './dto/index.js';
+import type { AlumniService } from '../alumni/alumni.service.js';
+import type { SignupEmailService } from './signup-email.service.js';
 
 const PAST = new Date('2000-01-01');
 
@@ -99,6 +106,8 @@ describe('AuthService', () => {
     getOwn: ReturnType<typeof vi.fn>;
   };
   let verification: { required: boolean; start: ReturnType<typeof vi.fn> };
+  let signupEmail: { consumeToken: ReturnType<typeof vi.fn> };
+  let alumni: { check: ReturnType<typeof vi.fn> };
 
   function makeService(config = makeConfig()) {
     const dataSource = {
@@ -113,6 +122,8 @@ describe('AuthService', () => {
       students as unknown as StudentsService,
       employers as unknown as EmployersService,
       verification as unknown as EmailVerificationService,
+      signupEmail as unknown as SignupEmailService,
+      alumni as unknown as AlumniService,
     );
   }
 
@@ -138,6 +149,10 @@ describe('AuthService', () => {
       getOwn: vi.fn().mockResolvedValue({ id: 'company-1' }),
     };
     verification = { required: true, start: vi.fn().mockResolvedValue(undefined) };
+    signupEmail = { consumeToken: vi.fn().mockResolvedValue(undefined) };
+    alumni = {
+      check: vi.fn().mockResolvedValue({ message: 'ok', name: 'RAHIM UDDIN' }),
+    };
   });
 
   describe('email verification on registration', () => {
@@ -247,6 +262,57 @@ describe('AuthService', () => {
       await expect(
         service.registerEmployer(employerDto),
       ).resolves.toBeDefined();
+    });
+  });
+
+  describe('registerAlumni', () => {
+    const { studyLevel: _level, ...rest } = studentDto;
+    const alumniDto: RegisterAlumniDto = {
+      ...rest,
+      email: 'rahim.uddin@gmail.com',
+      registrationNumber: '22-36918-02',
+      emailToken: 'a'.repeat(64),
+    };
+
+    it('checks the alumni list, then saves a verified graduated alumni profile', async () => {
+      const res = await makeService().registerAlumni(alumniDto);
+      expect(alumni.check).toHaveBeenCalledWith('22-48123-1', '22-36918-02');
+      expect(signupEmail.consumeToken).toHaveBeenCalledWith(
+        'rahim.uddin@gmail.com',
+        'a'.repeat(64),
+        manager,
+      );
+      expect(users.create.mock.calls[0][0]).toMatchObject({
+        email: 'rahim.uddin@gmail.com',
+        role: UserRole.STUDENT,
+        emailVerified: true,
+      });
+      const profile = students.createForUser.mock.calls[0][2];
+      expect(profile).toMatchObject({
+        aiubId: '22-48123-1',
+        studyLevel: StudyLevel.GRADUATED,
+        isAlumni: true,
+      });
+      expect(profile).not.toHaveProperty('registrationNumber');
+      expect(profile).not.toHaveProperty('emailToken');
+      expect(verification.start).not.toHaveBeenCalled();
+      expect(res.user.emailVerified).toBe(true);
+    });
+
+    it('creates nothing when the details are not on the alumni list', async () => {
+      alumni.check.mockRejectedValue(new BadRequestException('no match'));
+      await expect(makeService().registerAlumni(alumniDto)).rejects.toThrow(
+        'no match',
+      );
+      expect(users.create).not.toHaveBeenCalled();
+    });
+
+    it('is blocked when the student cutoff has passed', async () => {
+      const config = makeConfig({ 'fair.studentRegistrationDeadline': PAST });
+      await expect(
+        makeService(config).registerAlumni(alumniDto),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(alumni.check).not.toHaveBeenCalled();
     });
   });
 

@@ -24,6 +24,11 @@ import {
 import { EmailVerificationService } from './email-verification.service.js';
 import { PasswordResetService } from './password-reset.service.js';
 import { SignupEmailService } from './signup-email.service.js';
+import { AlumniService } from '../alumni/alumni.service.js';
+import {
+  CheckAlumniDto,
+  CheckAlumniResponseDto,
+} from '../alumni/dto/alumni.dto.js';
 import {
   AuthResponseDto,
   AuthUserDto,
@@ -32,6 +37,7 @@ import {
   LoginDto,
   MessageResponseDto,
   ResetPasswordDto,
+  RegisterAlumniDto,
   RegisterEmployerDto,
   RegisterStudentDto,
   SignupCodeDto,
@@ -48,6 +54,7 @@ export class AuthController {
     private readonly passwordResetService: PasswordResetService,
     private readonly emailVerification: EmailVerificationService,
     private readonly signupEmail: SignupEmailService,
+    private readonly alumni: AlumniService,
   ) {}
 
   @Public()
@@ -92,6 +99,35 @@ export class AuthController {
     @Body() dto: RegisterStudentDto,
   ): Promise<StudentRegistrationResponse> {
     return this.authService.registerStudent(dto);
+  }
+
+  @Public()
+  @Post('alumni/check')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Alumni sign-up: check the AIUB ID and registration number',
+    description:
+      'Matches them against the alumni list the fair office uploads and returns the name on the list. ' +
+      '**400** if they do not match, **409** if the AIUB ID already has an account, **429** after ' +
+      '5 wrong numbers in a row (the ID is locked for 15 minutes).',
+  })
+  checkAlumni(@Body() dto: CheckAlumniDto): Promise<CheckAlumniResponseDto> {
+    return this.alumni.check(dto.aiubId, dto.registrationNumber);
+  }
+
+  @Public()
+  @Post('register/alumni')
+  @ApiOperation({
+    summary: 'Register an alumnus with a personal email and the full profile',
+    description:
+      'Same body as register/student, without studyLevel (always graduated), plus registrationNumber ' +
+      'and a required emailToken from POST /auth/signup-code/verify. The AIUB ID and registration ' +
+      'number must match the alumni list. The account starts verified.',
+  })
+  registerAlumni(
+    @Body() dto: RegisterAlumniDto,
+  ): Promise<StudentRegistrationResponse> {
+    return this.authService.registerAlumni(dto);
   }
 
   @Public()

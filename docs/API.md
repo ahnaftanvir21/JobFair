@@ -231,6 +231,35 @@ Content-Type: application/json
   - `This AIUB ID is already registered`
   - `SSC was added more than once` (SSC, HSC, BSc, MSc 1 and MSc 2 can each appear once; professional degrees can repeat)
 
+### POST /auth/alumni/check
+**Who:** anyone. Alumni sign-up, first step: checks an AIUB ID and graduation registration number against the alumni list the fair office uploads ([admin](#post-adminalumniupload)).
+
+```json
+{ "aiubId": "16-32398-2", "registrationNumber": "22-36987-01" }
+```
+
+Registration numbers are compared on letters and digits only, so `22 36987 01` also matches.
+
+**200 OK:** `{ "message": "Details match the alumni list.", "name": "AHNAF SADMAN" }` (`name` is from the list and can be `null`).
+
+**Errors:**
+- `400 These details don't match the AIUB alumni list...`: the ID is not on the list or the number is wrong (same message for both).
+- `409 An account already exists for this AIUB ID...`
+- `429 Too many wrong registration numbers for this AIUB ID. Try again in N minutes.`: after 5 wrong numbers in a row the ID is locked for 15 minutes.
+
+### POST /auth/register/alumni
+**Who:** anyone. Creates a student account for a graduate who no longer uses the AIUB student email.
+
+Same body as [register/student](#post-authregisterstudent), with these differences:
+- `email`: any email (personal or work).
+- `emailToken` (required): from [POST /auth/signup-code/verify](#post-authsignup-codeverify) for the same email, so the account starts verified.
+- `registrationNumber` (required): must match `aiubId` on the alumni list.
+- No `studyLevel`: it is always `graduated`, and the profile has `isAlumni: true`. `PATCH /students/me` cannot change it to `ongoing` (`400`).
+
+**201 Created:** like register/student.
+
+**Errors:** the [alumni/check](#post-authalumnicheck) errors, `400` for an expired email token, `409` if the email or AIUB ID is taken.
+
 ### POST /auth/register/employer
 **Who:** anyone. Creates an employer account and the company profile.
 
@@ -1331,6 +1360,28 @@ Approves the company and emails it. Also works on a rejected company. **200** th
 ### PATCH /admin/employers/:id/reject
 Body: `{ "reason": "Website and HR contact could not be verified." }` (required, up to 500 characters). Rejects the company, or withdraws an approval, and emails it the reason. **400** without a reason, **404** unknown company.
 
+### POST /admin/alumni/upload
+`multipart/form-data` with `file`: the alumni list as `.xlsx` or `.csv` (Google Sheets: File > Download), up to 5 MB. The first sheet with the headings is used; headings can sit below a title row and in any order:
+- `ID` (or `AIUB ID`, `Student ID`): like `16-32398-2`
+- a heading containing `Reg` (like `Grad Reg`): the graduation registration number
+- a heading containing `Name` (optional)
+
+New IDs are added and changed ones updated; IDs not in the file stay, so the list can be uploaded again or in parts. Every row in the sheet is read, including rows hidden by a filter. Registration numbers are checked with a keyed hash and also kept encrypted (AES-256-GCM, key from `JWT_SECRET`) so the admin can see them. **If `JWT_SECRET` changes, upload the list again**, or sign-ups stop matching and the numbers can't be shown.
+
+**200 OK:**
+```json
+{ "added": 120, "updated": 2, "unchanged": 0, "skipped": 1,
+  "problems": [{ "row": 7, "message": "Registration number for 13-23331-1 is empty" }],
+  "totalInList": 122 }
+```
+`problems` lists the first 50 skipped rows. **400** for another file type, a sheet without the headings, or no usable rows.
+
+### GET /admin/alumni
+The list with who has registered. Query: `status` (`registered`, `not_registered`), `q` (AIUB ID, name or login email), `page`, `limit`. Each item: `id`, `aiubId`, `registrationNumber` (as written in the sheet; `null` if it can't be shown, then upload the list again), `name`, `lockedUntil` (set while locked after wrong numbers), and `account` (`email`, `name`, `isAlumni`, `registeredAt`) or `null`. An ID counts as registered when any student account has it, including a current student who signed up with the AIUB email. Also returns `totalInList` and `registered`.
+
+### DELETE /admin/alumni/:id
+Removes one ID from the list. **204**. An account already made with it is not deleted.
+
 ## 12. Reference
 
 ### Allowed values
@@ -1363,6 +1414,8 @@ Formats:
 |---|---|---|
 | GET | `/` | anyone |
 | POST | `/auth/register/student` | anyone |
+| POST | `/auth/alumni/check` | anyone |
+| POST | `/auth/register/alumni` | anyone |
 | POST | `/auth/register/employer` | anyone |
 | POST | `/auth/login` | anyone |
 | POST | `/auth/forgot-password` | anyone |
